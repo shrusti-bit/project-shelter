@@ -93,7 +93,8 @@ function loadItems() {
         // Get reference to items in Firebase
         itemsRef = database.ref('items');
 
-        // Listen for realtime updates
+        // Listen for realtime updates - automatically updates UI when any item changes
+        // This includes when donations are added (amount updates immediately)
         itemsRef.on('value', (snapshot) => {
             const itemsData = snapshot.val();
             const items = itemsData ? Object.keys(itemsData).map(key => ({
@@ -102,7 +103,7 @@ function loadItems() {
             })) : [];
 
             loadingEl.classList.add('hidden');
-            renderItems(items);
+            renderItems(items); // Re-render with updated amounts
         }, (error) => {
             console.error('Error loading items:', error);
             loadingEl.classList.add('hidden');
@@ -344,7 +345,7 @@ async function handleDonationSubmit(e) {
     submitBtn.textContent = '⏳ Submitting...';
 
     try {
-        // Create donation record (status: pending - will be verified by admin)
+        // Create donation record
         const donationId = database.ref('donations').push().key;
         const donation = {
             itemId: currentItem.id,
@@ -353,12 +354,44 @@ async function handleDonationSubmit(e) {
             amount,
             isAnonymous,
             transactionRef,
-            status: 'pending', // Admin will verify and add amount to item
+            status: 'pending', // Admin can verify later if needed
             createdAt: firebase.database.ServerValue.TIMESTAMP
         };
 
-        // Save donation (don't add to item yet - wait for admin verification)
+        // Save donation
         await database.ref(`donations/${donationId}`).set(donation);
+
+        // IMMEDIATELY update item with donation amount (real-time update)
+        const itemRef = database.ref(`items/${currentItem.id}`);
+        const itemSnapshot = await itemRef.once('value');
+        const itemData = itemSnapshot.val();
+
+        if (itemData) {
+            const currentDonated = itemData.donated || 0;
+            const newDonated = currentDonated + amount;
+            const donors = itemData.donors || {};
+            const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            donors[donorKey] = {
+                name: donorName,
+                amount: amount,
+                isAnonymous: isAnonymous,
+                donationId: donationId,
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            };
+
+            // Update item: add donated amount and update status
+            // This will trigger the real-time listener automatically
+            await itemRef.update({
+                donated: newDonated,
+                donors: donors,
+                status: newDonated >= itemData.total ? 'funded' : 'available',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+
+            // The real-time listener (itemsRef.on('value')) will automatically
+            // detect this change and update the UI immediately
+        }
 
         // Track donation for analytics
         if (typeof trackDonation === 'function') {
