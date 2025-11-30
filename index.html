@@ -8,6 +8,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 </head>
 <body>
     <div class="christmas-bg min-h-screen relative" style="z-index: 0;">
@@ -18,33 +19,7 @@
                 <div class="flex justify-between h-16 items-center">
                     <!-- PROJECT SHELTER Logo -->
                     <div class="project-shelter-logo">
-                        <div class="logo-icon">
-                            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <!-- Central white square -->
-                                <rect x="18" y="18" width="4" height="4" fill="white"/>
-                                <!-- Top arrow -->
-                                <rect x="18" y="4" width="4" height="12" fill="#4ECDC4"/>
-                                <polygon points="18,4 20,0 22,4" fill="#4ECDC4"/>
-                                <!-- Bottom arrow -->
-                                <rect x="18" y="24" width="4" height="12" fill="#4ECDC4"/>
-                                <polygon points="18,36 20,40 22,36" fill="#4ECDC4"/>
-                                <!-- Left rectangle -->
-                                <rect x="4" y="18" width="12" height="4" fill="#4ECDC4"/>
-                                <!-- Right rectangle -->
-                                <rect x="24" y="18" width="12" height="4" fill="#4ECDC4"/>
-                                <!-- Diagonal rectangles -->
-                                <rect x="12" y="12" width="4" height="4" transform="rotate(-45 14 14)" fill="#4ECDC4"/>
-                                <rect x="24" y="12" width="4" height="4" transform="rotate(45 26 14)" fill="#4ECDC4"/>
-                                <rect x="12" y="24" width="4" height="4" transform="rotate(45 14 26)" fill="#4ECDC4"/>
-                                <rect x="24" y="24" width="4" height="4" transform="rotate(-45 26 26)" fill="#4ECDC4"/>
-                            </svg>
-                        </div>
-                        <div class="logo-text">
-                            <div class="font-bold text-lg leading-tight" style="color: #1e3a8a;">
-                                <div style="font-size: 0.75rem; color: #60a5fa; font-weight: 500;">PROJECT</div>
-                                <div style="font-size: 1rem; color: #1e3a8a; font-weight: 700;">SHELTER</div>
-                            </div>
-                        </div>
+                        <img src="logo.jpg" alt="Project Shelter Logo" class="logo-image" />
                     </div>
 
                     <!-- Admin Link -->
@@ -226,24 +201,51 @@
                     <div class="space-y-4">
                         <!-- Step 1 -->
                         <div class="bg-white p-4 rounded-lg border-2 border-red-200">
-                            <div class="flex items-start gap-3 mb-3">
+                            <div class="flex items-start gap-3 mb-4">
                                 <div class="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">1</div>
                                 <div class="flex-1">
-                                    <p class="font-medium text-gray-800 mb-2">Scan & Pay</p>
-                                    <p class="text-sm text-gray-600">Scan the UPI QR code below or use the UPI ID to make payment</p>
+                                    <p class="font-medium text-gray-800 mb-2 text-lg">Choose Your Payment Method</p>
+                                    <p class="text-base text-gray-700">You can pay in TWO ways:</p>
                                 </div>
                             </div>
-                            <div class="bg-white p-4 rounded-lg border-2 border-dashed border-red-300 flex items-center justify-center shadow-inner">
-                                <div class="text-center">
-                                    <div class="w-40 h-40 bg-gradient-to-br from-red-100 to-blue-100 rounded-lg mx-auto mb-2 flex items-center justify-center border-2 border-red-200">
-                                        <div class="text-center">
-                                            <div class="text-5xl mb-2">📱</div>
-                                            <span class="text-gray-600 text-xs font-medium">UPI QR Code</span>
+                            
+                            <!-- Payment Method Options -->
+                            <div class="space-y-4">
+                                <!-- Option 1: QR Code -->
+                                <div class="bg-gradient-to-br from-red-50 to-blue-50 p-4 rounded-lg border-2 border-red-300">
+                                    <p class="font-bold text-lg text-gray-900 mb-3 text-center">📱 Method 1: Scan QR Code (UPI Payment)</p>
+                                    <div class="bg-white p-4 rounded-lg border-2 border-dashed border-red-300 flex items-center justify-center shadow-inner">
+                                        <div class="text-center w-full">
+                                            <img src="scanner.png" alt="UPI QR Code" class="w-48 h-48 object-contain mx-auto border-2 border-red-200 rounded-lg" />
+                                            <p class="text-base text-gray-700 mt-3 font-medium">
+                                                📱 Scan this QR code with your phone to pay
+                                            </p>
                                         </div>
                                     </div>
-                                    <p class="text-xs text-gray-500">
-                                        (Place your UPI QR code image here)
-                                    </p>
+                                </div>
+
+                                <!-- Option 2: Bank Transfer -->
+                                <div class="bg-gradient-to-br from-blue-50 to-green-50 p-4 rounded-lg border-2 border-blue-400">
+                                    <p class="font-bold text-lg text-gray-900 mb-3 text-center">🏦 Method 2: Bank Transfer</p>
+                                    <div class="text-center">
+                                        <a 
+                                            href="https://projectshelter.org.in/payment-details" 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            class="inline-flex items-center justify-center gap-3 px-8 py-4 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 transition text-lg font-bold shadow-lg hover:shadow-xl transform hover:scale-105 w-full max-w-md mx-auto border-4 border-blue-600"
+                                            style="font-size: 1.1rem; min-height: 60px;"
+                                        >
+                                            <span style="font-size: 1.5rem;">🏦</span>
+                                            <span>CLICK HERE TO SEE BANK ACCOUNT DETAILS</span>
+                                            <span style="font-size: 1.2rem;">↗️</span>
+                                        </a>
+                                        <p class="text-base text-gray-700 mt-3 font-medium">
+                                            👆 Click the yellow button above to open Project Shelter website and see bank account number, IFSC code, and other details
+                                        </p>
+                                        <p class="text-sm text-gray-600 mt-2">
+                                            (This will open Project Shelter website in a new page - you can come back here after transferring)
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -253,8 +255,8 @@
                             <div class="flex items-start gap-3 mb-3">
                                 <div class="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">2</div>
                                 <div class="flex-1">
-                                    <p class="font-medium text-gray-800 mb-2">Enter Transaction Reference</p>
-                                    <p class="text-sm text-gray-600">After payment, enter your UPI transaction reference number</p>
+                                    <p class="font-medium text-gray-800 mb-2 text-lg">Enter Transaction Reference Number</p>
+                                    <p class="text-base text-gray-700">After you make the payment (using QR code OR bank transfer), enter the transaction reference number you received</p>
                                 </div>
                             </div>
                         </div>
@@ -274,6 +276,42 @@
                             placeholder="e.g., UPI123456789"
                         />
                         <p class="text-xs text-gray-500 mt-1">Found in your payment confirmation message</p>
+                    </div>
+
+                    <!-- Screenshot Upload -->
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            📸 Upload Payment Screenshot (Optional but Recommended)
+                        </label>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:border-red-400 transition">
+                            <input
+                                type="file"
+                                id="screenshot-upload"
+                                accept="image/*"
+                                class="hidden"
+                            />
+                            <div class="text-center">
+                                <button
+                                    type="button"
+                                    onclick="document.getElementById('screenshot-upload').click()"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium mb-2"
+                                >
+                                    📷 Choose Screenshot
+                                </button>
+                                <p class="text-xs text-gray-500 mt-1" id="screenshot-filename">No file selected</p>
+                                <div id="screenshot-preview" class="mt-3 hidden">
+                                    <img id="screenshot-preview-img" src="" alt="Screenshot preview" class="max-w-full max-h-48 mx-auto rounded-lg border-2 border-gray-300" />
+                                    <button
+                                        type="button"
+                                        onclick="removeScreenshot()"
+                                        class="mt-2 text-red-600 hover:text-red-800 text-sm font-medium"
+                                    >
+                                        ❌ Remove
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Upload a screenshot of your payment confirmation for verification</p>
                     </div>
 
                     <!-- Confirmation Checkbox -->
@@ -329,6 +367,19 @@
             <button onclick="document.getElementById('success-modal').classList.add('hidden')" class="mt-6 btn-christmas px-6 py-2 rounded-lg font-bold">
                 Close
             </button>
+        </div>
+    </div>
+
+    <!-- Screenshot Modal -->
+    <div id="screenshot-modal" class="modal hidden" style="z-index: 9999;">
+        <div class="modal-content christmas-card p-4 max-w-4xl w-full relative" onclick="event.stopPropagation()">
+            <button onclick="document.getElementById('screenshot-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-red-600 text-3xl font-bold transition z-10 bg-white rounded-full w-10 h-10 flex items-center justify-center">×</button>
+            <div class="text-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800" id="screenshot-modal-title">Payment Screenshot</h3>
+            </div>
+            <div class="text-center">
+                <img id="screenshot-modal-img" src="" alt="Payment screenshot" class="max-w-full max-h-[80vh] mx-auto rounded-lg border-4 border-gray-300" />
+            </div>
         </div>
     </div>
 

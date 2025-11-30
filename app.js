@@ -54,6 +54,9 @@ function setupEventListeners() {
 
     // Donation form
     document.getElementById('donation-form').addEventListener('submit', handleDonationSubmit);
+    
+    // Screenshot upload preview
+    document.getElementById('screenshot-upload').addEventListener('change', handleScreenshotPreview);
 }
 
 // Set filter and update UI
@@ -96,16 +99,32 @@ function loadItems() {
         // Listen for realtime updates - automatically updates UI when any item changes
         // This includes when donations are added (amount updates immediately)
         itemsRef.on('value', (snapshot) => {
+            console.log('🔄 Real-time update triggered!');
             const itemsData = snapshot.val();
             const items = itemsData ? Object.keys(itemsData).map(key => ({
                 id: key,
                 ...itemsData[key]
             })) : [];
 
+            console.log('📦 Items received:', items.length);
+            if (items.length > 0) {
+                console.log('📊 Sample item:', {
+                    id: items[0].id,
+                    name: items[0].name,
+                    donated: items[0].donated,
+                    total: items[0].total
+                });
+            }
+            console.log('🔄 Re-rendering items with updated data...');
+
             loadingEl.classList.add('hidden');
             renderItems(items); // Re-render with updated amounts
+            
+            console.log('✅ UI updated with latest data');
         }, (error) => {
-            console.error('Error loading items:', error);
+            console.error('❌ Error in real-time listener:', error);
+            console.error('Error code:', error.code);
+            console.error('Error message:', error.message);
             loadingEl.classList.add('hidden');
             showError('Failed to load items. Please refresh the page.');
         });
@@ -208,11 +227,33 @@ function createItemCard(item) {
                 </p>
             </div>
 
-            ${isFunded ? `
-                <div class="mb-4 p-3 bg-green-50 rounded-lg border-2 border-green-300">
-                    <p class="text-sm text-green-800 font-medium text-center">
-                        🎉 ${getDonorDisplay(item)}
+            ${getDonorDisplay(item) ? `
+                <div class="mb-4 p-3 ${isFunded ? 'bg-green-50 border-2 border-green-300' : 'bg-blue-50 border-2 border-blue-300'} rounded-lg">
+                    <p class="text-sm ${isFunded ? 'text-green-800' : 'text-blue-800'} font-medium text-center">
+                        ${getDonorDisplay(item)}
                     </p>
+                </div>
+            ` : ''}
+
+            ${item.screenshots && item.screenshots.length > 0 ? `
+                <div class="mb-4">
+                    <p class="text-xs text-gray-600 font-medium mb-2">📸 Payment Screenshots:</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${item.screenshots.slice(0, 4).map((screenshot, idx) => `
+                            <div class="relative group">
+                                <img 
+                                    src="${escapeHtml(screenshot.url)}" 
+                                    alt="Payment screenshot ${idx + 1}"
+                                    class="w-full h-24 object-cover rounded-lg border-2 border-gray-300 cursor-pointer hover:border-red-400 transition"
+                                    onclick="openScreenshotModal('${escapeHtml(screenshot.url)}', '${escapeHtml(screenshot.donorName || 'Donor')}')"
+                                />
+                                <div class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1 text-center rounded-b-lg">
+                                    ${escapeHtml(screenshot.donorName || 'Donor')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${item.screenshots.length > 4 ? `<p class="text-xs text-gray-500 mt-1 text-center">+${item.screenshots.length - 4} more</p>` : ''}
                 </div>
             ` : ''}
 
@@ -227,23 +268,59 @@ function createItemCard(item) {
 
 // Get donor display text
 function getDonorDisplay(item) {
-    if (!item.donors || item.donors.length === 0) {
-        return 'Anonymous';
+    if (!item.donors || Object.keys(item.donors).length === 0) {
+        return '';
     }
     
     const donors = Object.values(item.donors);
+    const isFullyFunded = (item.donated || 0) >= (item.total || 0);
+    
+    // Filter out anonymous donors and get names
+    const namedDonors = donors.filter(d => !d.isAnonymous);
+    const anonymousCount = donors.length - namedDonors.length;
+    
+    // Single donor case
     if (donors.length === 1) {
-        return donors[0].isAnonymous ? 'Anonymous' : donors[0].name;
+        const donor = donors[0];
+        if (donor.isAnonymous) {
+            return isFullyFunded ? '🎁 Donated by Anonymous' : '💝 Partially donated by Anonymous';
+        }
+        return isFullyFunded 
+            ? `🎁 Donated by ${escapeHtml(donor.name)}` 
+            : `💝 Partially donated by ${escapeHtml(donor.name)}`;
     }
     
-    const names = donors.filter(d => !d.isAnonymous).map(d => d.name);
-    if (names.length === 0) {
-        return 'Multiple Anonymous Donors';
+    // Multiple donors case
+    if (namedDonors.length === 0) {
+        // All anonymous
+        return isFullyFunded 
+            ? `🎁 Donated by ${donors.length} Anonymous Donor${donors.length > 1 ? 's' : ''}`
+            : `💝 Partially donated by ${donors.length} Anonymous Donor${donors.length > 1 ? 's' : ''}`;
     }
-    if (names.length === donors.length) {
-        return `Funded by: ${names.join(', ')}`;
+    
+    // Mix of named and anonymous
+    const donorNames = namedDonors.map(d => escapeHtml(d.name));
+    let displayText = '';
+    
+    if (isFullyFunded) {
+        displayText = '🎁 Donated by: ';
+    } else {
+        displayText = '💝 Partially donated by: ';
     }
-    return `Funded by: ${names.join(', ')} and ${donors.length - names.length} anonymous donor(s)`;
+    
+    if (donorNames.length > 0) {
+        displayText += donorNames.join(', ');
+    }
+    
+    if (anonymousCount > 0) {
+        if (donorNames.length > 0) {
+            displayText += ` and ${anonymousCount} anonymous donor${anonymousCount > 1 ? 's' : ''}`;
+        } else {
+            displayText += `${anonymousCount} anonymous donor${anonymousCount > 1 ? 's' : ''}`;
+        }
+    }
+    
+    return displayText;
 }
 
 // Open donation modal
@@ -281,9 +358,178 @@ function openDonationModal(item) {
 
 // Close donation modal
 function closeDonationModal() {
+    console.log('🔄 Closing donation modal...');
     const modal = document.getElementById('donation-modal');
-    modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        console.log('✅ Modal hidden class added');
+    } else {
+        console.warn('⚠️ Modal element not found!');
+    }
     currentItem = null;
+    
+    // Reset form
+    const form = document.getElementById('donation-form');
+    if (form) {
+        form.reset();
+        // Reset screenshot preview
+        removeScreenshot();
+        console.log('✅ Form reset');
+    }
+    console.log('✅ Donation modal closed');
+}
+
+// Open screenshot modal
+function openScreenshotModal(url, donorName) {
+    const modal = document.getElementById('screenshot-modal');
+    const img = document.getElementById('screenshot-modal-img');
+    const title = document.getElementById('screenshot-modal-title');
+    
+    img.src = url;
+    title.textContent = `Payment Screenshot - ${donorName}`;
+    modal.classList.remove('hidden');
+    
+    // Close on outside click
+    modal.addEventListener('click', function closeOnOutside(e) {
+        if (e.target.id === 'screenshot-modal') {
+            modal.classList.add('hidden');
+            modal.removeEventListener('click', closeOnOutside);
+        }
+    });
+}
+
+// Handle screenshot preview
+function handleScreenshotPreview(e) {
+    const file = e.target.files[0];
+    const previewDiv = document.getElementById('screenshot-preview');
+    const previewImg = document.getElementById('screenshot-preview-img');
+    const filenameSpan = document.getElementById('screenshot-filename');
+    
+    if (file) {
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            e.target.value = '';
+            return;
+        }
+        
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File size must be less than 5MB');
+            e.target.value = '';
+            return;
+        }
+        
+        filenameSpan.textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            previewImg.src = event.target.result;
+            previewDiv.classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    } else {
+        previewDiv.classList.add('hidden');
+        filenameSpan.textContent = 'No file selected';
+    }
+}
+
+// Remove screenshot
+function removeScreenshot() {
+    document.getElementById('screenshot-upload').value = '';
+    document.getElementById('screenshot-preview').classList.add('hidden');
+    document.getElementById('screenshot-filename').textContent = 'No file selected';
+}
+
+// Upload screenshot to Google Drive via Apps Script
+async function uploadScreenshot(file, donationId) {
+    if (!file) {
+        console.log('📸 No file provided for upload');
+        return null;
+    }
+    
+    if (!GOOGLE_DRIVE_UPLOAD_URL) {
+        console.warn('⚠️ Google Drive upload URL not configured. Screenshot upload skipped.');
+        console.warn('⚠️ Please set GOOGLE_DRIVE_UPLOAD_URL in firebase-config.js');
+        return null;
+    }
+    
+    try {
+        console.log('📸 Starting screenshot upload to Google Drive...');
+        console.log('📸 File name:', file.name);
+        console.log('📸 File size:', (file.size / 1024).toFixed(2), 'KB');
+        console.log('📸 File type:', file.type);
+        console.log('📸 Upload URL:', GOOGLE_DRIVE_UPLOAD_URL);
+        
+        // Convert file to base64
+        console.log('📸 Converting file to base64...');
+        const base64 = await fileToBase64(file);
+        console.log('✅ File converted to base64, length:', base64.length);
+        
+        // Prepare upload data
+        const uploadData = {
+            fileName: `${donationId}_${Date.now()}_${file.name}`,
+            fileData: base64,
+            mimeType: file.type
+        };
+        
+        console.log('📸 Sending request to Google Apps Script...');
+        console.log('📸 Upload data size:', JSON.stringify(uploadData).length, 'bytes');
+        
+        // Upload to Google Drive via Apps Script
+        const response = await fetch(GOOGLE_DRIVE_UPLOAD_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(uploadData)
+        });
+        
+        console.log('📸 Response status:', response.status, response.statusText);
+        console.log('📸 Response headers:', response.headers);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Upload failed with status:', response.status);
+            console.error('❌ Error response:', errorText);
+            throw new Error(`Upload failed: ${response.status} ${response.statusText}. Response: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('📸 Upload response:', result);
+        
+        if (result.success && result.fileUrl) {
+            console.log('✅ Screenshot uploaded successfully!');
+            console.log('✅ File URL:', result.fileUrl);
+            console.log('✅ File ID:', result.fileId);
+            return result.fileUrl;
+        } else {
+            console.error('❌ Upload response indicates failure:', result);
+            throw new Error(result.error || 'Upload failed - no file URL returned');
+        }
+    } catch (error) {
+        console.error('❌ Error uploading screenshot to Google Drive:', error);
+        console.error('❌ Error name:', error.name);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+        // Don't block donation submission if screenshot upload fails
+        alert('⚠️ Screenshot upload failed, but donation will still be submitted. Error: ' + error.message);
+        return null;
+    }
+}
+
+// Convert file to base64
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            // Remove data URL prefix (e.g., "data:image/png;base64,")
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
 }
 
 // Handle donation form submission
@@ -344,9 +590,52 @@ async function handleDonationSubmit(e) {
     submitBtn.disabled = true;
     submitBtn.textContent = '⏳ Submitting...';
 
+    // Check Firebase connection first
+    if (!database) {
+        console.error('❌ Firebase database not initialized!');
+        showFormError('Firebase connection error. Please check firebase-config.js');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🎁 Submit Donation';
+        return;
+    }
+
     try {
+        console.log('🔄 Starting donation submission...');
+        console.log('📦 Current item:', currentItem);
+        console.log('💰 Donation amount:', amount);
+        
+        // Test Firebase connection by trying to read
+        const testRef = database.ref('items');
+        await testRef.once('value');
+        console.log('✅ Firebase connection verified');
+        
         // Create donation record
         const donationId = database.ref('donations').push().key;
+        console.log('📝 Donation ID generated:', donationId);
+        
+        // Upload screenshot if provided (before saving donation)
+        let screenshotURL = null;
+        const screenshotFile = document.getElementById('screenshot-upload').files[0];
+        if (screenshotFile) {
+            submitBtn.textContent = '📸 Uploading screenshot...';
+            console.log('📸 Screenshot file detected, uploading to Google Drive...');
+            console.log('📸 File details:', {
+                name: screenshotFile.name,
+                size: screenshotFile.size,
+                type: screenshotFile.type
+            });
+            screenshotURL = await uploadScreenshot(screenshotFile, donationId);
+            if (screenshotURL) {
+                console.log('✅ Screenshot uploaded successfully:', screenshotURL);
+                console.log('✅ Screenshot URL will be saved to donation and item');
+            } else {
+                console.warn('⚠️ Screenshot upload failed or returned null');
+                console.warn('⚠️ Continuing with donation submission without screenshot');
+            }
+        } else {
+            console.log('ℹ️ No screenshot file provided, skipping upload');
+        }
+        
         const donation = {
             itemId: currentItem.id,
             donorName,
@@ -354,44 +643,82 @@ async function handleDonationSubmit(e) {
             amount,
             isAnonymous,
             transactionRef,
+            screenshotURL: screenshotURL || null,
             status: 'pending', // Admin can verify later if needed
             createdAt: firebase.database.ServerValue.TIMESTAMP
         };
 
-        // Save donation
+        // Save donation first
+        console.log('💾 Saving donation to Firebase...');
         await database.ref(`donations/${donationId}`).set(donation);
+        console.log('✅ Donation saved to Firebase:', donationId);
 
         // IMMEDIATELY update item with donation amount (real-time update)
+        console.log('🔄 Updating item in Firebase...');
         const itemRef = database.ref(`items/${currentItem.id}`);
+        console.log('📦 Item reference:', currentItem.id);
+        
         const itemSnapshot = await itemRef.once('value');
         const itemData = itemSnapshot.val();
+        console.log('📊 Current item data:', itemData);
 
-        if (itemData) {
-            const currentDonated = itemData.donated || 0;
-            const newDonated = currentDonated + amount;
-            const donors = itemData.donors || {};
-            const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            donors[donorKey] = {
-                name: donorName,
-                amount: amount,
-                isAnonymous: isAnonymous,
-                donationId: donationId,
-                createdAt: firebase.database.ServerValue.TIMESTAMP
-            };
-
-            // Update item: add donated amount and update status
-            // This will trigger the real-time listener automatically
-            await itemRef.update({
-                donated: newDonated,
-                donors: donors,
-                status: newDonated >= itemData.total ? 'funded' : 'available',
-                updatedAt: firebase.database.ServerValue.TIMESTAMP
-            });
-
-            // The real-time listener (itemsRef.on('value')) will automatically
-            // detect this change and update the UI immediately
+        if (!itemData) {
+            throw new Error(`Item not found in database: ${currentItem.id}`);
         }
+
+        const currentDonated = itemData.donated || 0;
+        const newDonated = currentDonated + amount;
+        const donors = itemData.donors || {};
+        const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        donors[donorKey] = {
+            name: donorName,
+            amount: amount,
+            isAnonymous: isAnonymous,
+            donationId: donationId,
+            createdAt: firebase.database.ServerValue.TIMESTAMP
+        };
+
+        // Update screenshots array if screenshot was uploaded
+        const screenshots = itemData.screenshots || [];
+        if (screenshotURL) {
+            screenshots.push({
+                url: screenshotURL,
+                donationId: donationId,
+                donorName: isAnonymous ? 'Anonymous' : donorName,
+                uploadedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        // Update item: add donated amount, update status, and add screenshot
+        // This will trigger the real-time listener automatically
+        console.log('💾 Updating item with new amount...');
+        console.log('   Previous donated:', currentDonated);
+        console.log('   New donated:', newDonated);
+        console.log('   Donation amount:', amount);
+        if (screenshotURL) {
+            console.log('   Screenshot URL:', screenshotURL);
+        }
+        
+        const updateData = {
+            donated: newDonated,
+            donors: donors,
+            status: newDonated >= itemData.total ? 'funded' : 'available',
+            updatedAt: firebase.database.ServerValue.TIMESTAMP
+        };
+        
+        if (screenshotURL) {
+            updateData.screenshots = screenshots;
+        }
+        
+        await itemRef.update(updateData);
+
+        console.log('✅ Item updated in Firebase successfully!');
+        console.log('✅ Real-time listener should update UI automatically');
+        console.log('⏳ Waiting for real-time update...');
+        
+        // Force a small delay to ensure Firebase processes the update
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Track donation for analytics (don't block on errors)
         try {
@@ -414,28 +741,48 @@ async function handleDonationSubmit(e) {
             console.warn('Notification creation failed:', err);
         }
 
-        // Reset form
-        document.getElementById('donation-form').reset();
+        console.log('✅ Donation submitted successfully!');
+        console.log('✅ Item updated with amount:', amount);
+        console.log('✅ Real-time listener should update UI automatically');
+        console.log('🔄 Closing modal and showing success...');
         
-        // Close donation modal first
+        // Close donation modal immediately
         closeDonationModal();
+        console.log('✅ Modal closed');
         
-        // Small delay to ensure modal closes before showing success
+        // Show success modal after brief delay
         setTimeout(() => {
             showSuccessModal();
-        }, 300);
+            console.log('✅ Success modal shown');
+        }, 200);
         
         // Re-enable submit button
         submitBtn.disabled = false;
         submitBtn.textContent = '🎁 Submit Donation';
-        
-        console.log('✅ Donation submitted successfully!');
 
     } catch (error) {
-        console.error('Error submitting donation:', error);
-        showFormError('Failed to submit donation. Please try again. Error: ' + error.message);
+        console.error('❌ Error submitting donation:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error code:', error.code);
+        if (error.stack) console.error('Stack:', error.stack);
+        
+        // Check for specific Firebase errors
+        let errorMessage = 'Failed to submit donation. ';
+        if (error.code === 'PERMISSION_DENIED' || error.message.includes('permission')) {
+            errorMessage += 'Permission denied. Please check Firebase database rules allow writes.';
+        } else if (error.code === 'NETWORK_ERROR' || error.message.includes('network')) {
+            errorMessage += 'Network error. Please check your internet connection.';
+        } else if (error.message.includes('Item not found')) {
+            errorMessage += 'Item not found in database. Please refresh the page and try again.';
+        } else {
+            errorMessage += 'Error: ' + (error.message || 'Unknown error') + '. Check console (F12) for details.';
+        }
+        
+        showFormError(errorMessage);
         submitBtn.disabled = false;
         submitBtn.textContent = '🎁 Submit Donation';
+        // Modal stays open so user can see error and retry
     }
 }
 
