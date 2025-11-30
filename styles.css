@@ -803,40 +803,18 @@ body {
     gap: 10px;
 }
 
-.logo-icon {
-    flex-shrink: 0;
-    background: white;
-    border-radius: 6px;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.logo-text {
-    flex-shrink: 0;
-    background: white;
-    border-radius: 6px;
-    padding: 4px 10px;
-    display: flex;
-    align-items: center;
-}
-
-.logo-text div {
-    line-height: 1.2;
-    text-shadow: none;
-    letter-spacing: 0.02em;
+.logo-image {
+    height: 50px;
+    width: auto;
+    object-fit: contain;
+    max-width: 200px;
 }
 
 /* Responsive logo */
 @media (max-width: 640px) {
-    .project-shelter-logo .logo-icon svg {
-        width: 32px;
-        height: 32px;
-    }
-    
-    .logo-text div {
-        font-size: 0.875rem;
+    .logo-image {
+        height: 40px;
+        max-width: 150px;
     }
     
     .nav-christmas h1 {
@@ -1182,3 +1160,50 @@ button:disabled {
     }
 }
 
+/* Enhanced styles for senior-friendly bank transfer button */
+a[href*="payment-details"] {
+    display: block !important;
+    text-decoration: none !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    background-color: #facc15 !important; /* Yellow-400 */
+    color: #111827 !important; /* Gray-900 - dark text */
+    border: 4px solid #2563eb !important; /* Blue-600 */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+}
+
+a[href*="payment-details"]:hover {
+    transform: scale(1.05) !important;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15), 0 0 0 6px rgba(37, 99, 235, 0.2) !important;
+    background-color: #eab308 !important; /* Yellow-500 - slightly darker on hover */
+    color: #111827 !important; /* Keep dark text on hover */
+}
+
+a[href*="payment-details"]:active {
+    transform: scale(0.98) !important;
+}
+
+/* Make payment method sections more visible */
+.bg-gradient-to-br {
+    background: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+
+/* Ensure text is readable for seniors */
+.text-lg {
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+}
+
+.text-base {
+    font-size: 1rem;
+    line-height: 1.5rem;
+}
+
+/* Larger touch targets for mobile */
+@media (max-width: 640px) {
+    a[href*="payment-details"] {
+        min-height: 70px !important;
+        font-size: 1.2rem !important;
+        padding: 1.25rem 1.5rem !important;
+    }
+}

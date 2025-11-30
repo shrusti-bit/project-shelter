@@ -249,69 +249,6 @@
                                 </div>
                             </div>
                         </div>
-
-                        <!-- Step 2 -->
-                        <div class="bg-white p-4 rounded-lg border-2 border-red-200">
-                            <div class="flex items-start gap-3 mb-3">
-                                <div class="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">2</div>
-                                <div class="flex-1">
-                                    <p class="font-medium text-gray-800 mb-2 text-lg">Enter Transaction Reference Number</p>
-                                    <p class="text-base text-gray-700">After you make the payment (using QR code OR bank transfer), enter the transaction reference number you received</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Transaction Reference Input -->
-                    <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            🔢 Transaction Reference Number (UPI Ref ID) *
-                        </label>
-                        <input
-                            type="text"
-                            id="transaction-ref"
-                            required
-                            minlength="5"
-                            class="w-full px-4 py-3 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition font-mono"
-                            placeholder="e.g., UPI123456789"
-                        />
-                        <p class="text-xs text-gray-500 mt-1">Found in your payment confirmation message</p>
-                    </div>
-
-                    <!-- Screenshot Upload -->
-                    <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">
-                            📸 Upload Payment Screenshot (Optional but Recommended)
-                        </label>
-                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50 hover:border-red-400 transition">
-                            <input
-                                type="file"
-                                id="screenshot-upload"
-                                accept="image/*"
-                                class="hidden"
-                            />
-                            <div class="text-center">
-                                <button
-                                    type="button"
-                                    onclick="document.getElementById('screenshot-upload').click()"
-                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium mb-2"
-                                >
-                                    📷 Choose Screenshot
-                                </button>
-                                <p class="text-xs text-gray-500 mt-1" id="screenshot-filename">No file selected</p>
-                                <div id="screenshot-preview" class="mt-3 hidden">
-                                    <img id="screenshot-preview-img" src="" alt="Screenshot preview" class="max-w-full max-h-48 mx-auto rounded-lg border-2 border-gray-300" />
-                                    <button
-                                        type="button"
-                                        onclick="removeScreenshot()"
-                                        class="mt-2 text-red-600 hover:text-red-800 text-sm font-medium"
-                                    >
-                                        ❌ Remove
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <p class="text-xs text-gray-500 mt-1">Upload a screenshot of your payment confirmation for verification</p>
                     </div>
 
                     <!-- Confirmation Checkbox -->
@@ -324,7 +261,7 @@
                                 class="h-5 w-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded mt-0.5"
                             />
                             <label class="ml-3 block text-sm text-gray-700">
-                                <span class="font-medium">✅ I confirm</span> I have completed the payment using the UPI QR code and entered the correct transaction reference number *
+                                <span class="font-medium">✅ I confirm</span> I have completed the payment using the UPI QR code or bank transfer *
                             </label>
                         </div>
                     </div>
@@ -367,19 +304,6 @@
             <button onclick="document.getElementById('success-modal').classList.add('hidden')" class="mt-6 btn-christmas px-6 py-2 rounded-lg font-bold">
                 Close
             </button>
-        </div>
-    </div>
-
-    <!-- Screenshot Modal -->
-    <div id="screenshot-modal" class="modal hidden" style="z-index: 9999;">
-        <div class="modal-content christmas-card p-4 max-w-4xl w-full relative" onclick="event.stopPropagation()">
-            <button onclick="document.getElementById('screenshot-modal').classList.add('hidden')" class="absolute top-4 right-4 text-gray-400 hover:text-red-600 text-3xl font-bold transition z-10 bg-white rounded-full w-10 h-10 flex items-center justify-center">×</button>
-            <div class="text-center mb-4">
-                <h3 class="text-xl font-bold text-gray-800" id="screenshot-modal-title">Payment Screenshot</h3>
-            </div>
-            <div class="text-center">
-                <img id="screenshot-modal-img" src="" alt="Payment screenshot" class="max-w-full max-h-[80vh] mx-auto rounded-lg border-4 border-gray-300" />
-            </div>
         </div>
     </div>
 

@@ -413,8 +413,6 @@ async function renderDonations(donations) {
                         <span class="font-bold text-green-600">₹${formatCurrency(donation.amount)}</span>
                     </div>
                     <div class="flex justify-between">
-                        <span>Transaction Ref:</span>
-                        <span class="font-mono text-xs">${escapeHtml(donation.transactionRef)}</span>
                     </div>
                     <div class="flex justify-between">
                         <span>Submitted:</span>
