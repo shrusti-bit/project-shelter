@@ -50,6 +50,9 @@ function initializeDashboard() {
     setInterval(updateNotificationsBadge, 30000); // Every 30 seconds
 }
 
+// Track selected donations
+let selectedDonations = new Set();
+
 function setupEventListeners() {
     document.getElementById('add-item-form').addEventListener('submit', handleAddItem);
     document.getElementById('edit-item-form').addEventListener('submit', handleUpdateItem);
@@ -59,6 +62,10 @@ function setupEventListeners() {
     document.getElementById('filter-pending').addEventListener('click', () => setDonationFilter('pending'));
     document.getElementById('filter-verified').addEventListener('click', () => setDonationFilter('verified'));
     document.getElementById('filter-all-donations').addEventListener('click', () => setDonationFilter('all'));
+    
+    // Bulk actions
+    document.getElementById('select-all-donations').addEventListener('change', handleSelectAllDonations);
+    document.getElementById('delete-selected-donations').addEventListener('click', handleDeleteSelectedDonations);
     
     // Logout
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
@@ -138,6 +145,10 @@ async function handleLogout() {
 
 function setDonationFilter(filter) {
     currentDonationFilter = filter;
+    
+    // Clear selection when filter changes
+    selectedDonations.clear();
+    updateBulkActionsVisibility();
     
     // Update button states
     document.querySelectorAll('#donations-list').parentElement.querySelectorAll('button').forEach(btn => {
@@ -560,17 +571,27 @@ async function renderDonations(donations) {
         const statusBadge = donation.status === 'verified' 
             ? '<span class="px-2 py-1 bg-green-500 text-white rounded text-xs">✅ Verified</span>'
             : '<span class="px-2 py-1 bg-yellow-500 text-white rounded text-xs">⏳ Pending</span>';
+        const isSelected = selectedDonations.has(donation.id);
 
         return `
-            <div class="border-2 border-red-200 rounded-lg p-4">
-                <div class="flex justify-between items-start mb-2">
+            <div class="border-2 ${isSelected ? 'border-red-500 bg-red-50' : 'border-red-200'} rounded-lg p-4">
+                <div class="flex items-start gap-3 mb-2">
+                    <input type="checkbox" 
+                           class="donation-checkbox w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 mt-1" 
+                           data-donation-id="${donation.id}"
+                           ${isSelected ? 'checked' : ''}
+                           onchange="handleDonationSelection('${donation.id}', this.checked)">
                     <div class="flex-1">
-                        <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName)}</h3>
-                        <p class="text-sm text-gray-600">${escapeHtml(donation.donorEmail)}</p>
-                        <p class="text-sm text-gray-600 mt-1">Item: <span class="font-medium">${escapeHtml(itemName)}</span></p>
-                        ${donation.isAnonymous ? '<p class="text-xs text-orange-600 mt-1">🔒 Marked as Anonymous (Public display only)</p>' : ''}
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex-1">
+                                <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName)}</h3>
+                                <p class="text-sm text-gray-600">${escapeHtml(donation.donorEmail)}</p>
+                                <p class="text-sm text-gray-600 mt-1">Item: <span class="font-medium">${escapeHtml(itemName)}</span></p>
+                                ${donation.isAnonymous ? '<p class="text-xs text-orange-600 mt-1">🔒 Marked as Anonymous (Public display only)</p>' : ''}
+                            </div>
+                            ${statusBadge}
+                        </div>
                     </div>
-                    ${statusBadge}
                 </div>
                 <div class="mt-2 space-y-1 text-sm">
                     <div class="flex justify-between">
@@ -609,6 +630,126 @@ async function renderDonations(donations) {
             </div>
         `;
     }).join('');
+    
+    // Update bulk actions visibility
+    updateBulkActionsVisibility();
+}
+
+// Handle individual donation selection
+function handleDonationSelection(donationId, isChecked) {
+    if (isChecked) {
+        selectedDonations.add(donationId);
+    } else {
+        selectedDonations.delete(donationId);
+    }
+    updateBulkActionsVisibility();
+}
+
+// Handle select all donations
+function handleSelectAllDonations(e) {
+    const isChecked = e.target.checked;
+    const checkboxes = document.querySelectorAll('.donation-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = isChecked;
+        const donationId = checkbox.getAttribute('data-donation-id');
+        if (isChecked) {
+            selectedDonations.add(donationId);
+        } else {
+            selectedDonations.delete(donationId);
+        }
+    });
+    
+    updateBulkActionsVisibility();
+}
+
+// Update bulk actions visibility and count
+function updateBulkActionsVisibility() {
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+    const selectAllCheckbox = document.getElementById('select-all-donations');
+    
+    if (selectedDonations.size > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = selectedDonations.size;
+        
+        // Update select all checkbox state
+        const checkboxes = document.querySelectorAll('.donation-checkbox');
+        const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+        if (selectAllCheckbox) selectAllCheckbox.checked = allChecked;
+    } else {
+        bulkActions.classList.add('hidden');
+        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+    }
+}
+
+// Delete selected donations
+async function handleDeleteSelectedDonations() {
+    if (selectedDonations.size === 0) {
+        alert('No donations selected');
+        return;
+    }
+    
+    const count = selectedDonations.size;
+    if (!confirm(`Are you sure you want to delete ${count} donation(s)? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const donationsToDelete = Array.from(selectedDonations);
+        const deletePromises = donationsToDelete.map(async (donationId) => {
+            // Get donation data first
+            const donationSnapshot = await database.ref(`donations/${donationId}`).once('value');
+            const donation = donationSnapshot.val();
+            
+            if (donation) {
+                // Remove donation amount from item if it was already added
+                const itemRef = database.ref(`items/${donation.itemId}`);
+                const itemSnapshot = await itemRef.once('value');
+                const item = itemSnapshot.val();
+                
+                if (item) {
+                    const currentDonated = Math.round((item.donated || 0) * 100) / 100;
+                    const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+                    const newDonated = Math.max(0, Math.round((currentDonated - donationAmount) * 100) / 100);
+                    
+                    await itemRef.update({
+                        donated: newDonated,
+                        status: newDonated >= item.total ? 'funded' : 'available',
+                        updatedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    
+                    // Remove donor from item's donors list
+                    if (item.donors) {
+                        const updatedDonors = {};
+                        Object.keys(item.donors).forEach(key => {
+                            if (item.donors[key].donationId !== donationId) {
+                                updatedDonors[key] = item.donors[key];
+                            }
+                        });
+                        await itemRef.update({ donors: updatedDonors });
+                    }
+                }
+            }
+            
+            // Delete donation
+            await database.ref(`donations/${donationId}`).remove();
+        });
+        
+        await Promise.all(deletePromises);
+        
+        // Log activity
+        await logActivity('donations_deleted', `Deleted ${count} donation(s)`);
+        
+        // Clear selection
+        selectedDonations.clear();
+        updateBulkActionsVisibility();
+        
+        alert(`Successfully deleted ${count} donation(s)`);
+    } catch (error) {
+        console.error('Error deleting donations:', error);
+        alert('Failed to delete some donations. Please try again.');
+    }
 }
 
 async function verifyDonation(donationId) {
