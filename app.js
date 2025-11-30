@@ -447,9 +447,19 @@ async function uploadScreenshot(file, donationId) {
         return null;
     }
     
-    if (!GOOGLE_DRIVE_UPLOAD_URL) {
+    // Check if GOOGLE_DRIVE_UPLOAD_URL is defined (from firebase-config.js)
+    // Try both direct reference and window object for compatibility
+    const uploadUrl = (typeof GOOGLE_DRIVE_UPLOAD_URL !== 'undefined' && GOOGLE_DRIVE_UPLOAD_URL)
+        ? GOOGLE_DRIVE_UPLOAD_URL 
+        : (typeof window !== 'undefined' && window.GOOGLE_DRIVE_UPLOAD_URL 
+            ? window.GOOGLE_DRIVE_UPLOAD_URL 
+            : null);
+    
+    if (!uploadUrl) {
         console.warn('⚠️ Google Drive upload URL not configured. Screenshot upload skipped.');
         console.warn('⚠️ Please set GOOGLE_DRIVE_UPLOAD_URL in firebase-config.js');
+        console.warn('⚠️ Make sure firebase-config.js is loaded before app.js');
+        console.warn('⚠️ Variable check - GOOGLE_DRIVE_UPLOAD_URL type:', typeof GOOGLE_DRIVE_UPLOAD_URL);
         return null;
     }
     
@@ -458,7 +468,7 @@ async function uploadScreenshot(file, donationId) {
         console.log('📸 File name:', file.name);
         console.log('📸 File size:', (file.size / 1024).toFixed(2), 'KB');
         console.log('📸 File type:', file.type);
-        console.log('📸 Upload URL:', GOOGLE_DRIVE_UPLOAD_URL);
+        console.log('📸 Upload URL:', uploadUrl);
         
         // Convert file to base64
         console.log('📸 Converting file to base64...');
@@ -476,7 +486,7 @@ async function uploadScreenshot(file, donationId) {
         console.log('📸 Upload data size:', JSON.stringify(uploadData).length, 'bytes');
         
         // Upload to Google Drive via Apps Script
-        const response = await fetch(GOOGLE_DRIVE_UPLOAD_URL, {
+        const response = await fetch(uploadUrl, {
             method: 'POST',
             mode: 'cors',
             headers: {
