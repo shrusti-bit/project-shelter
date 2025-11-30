@@ -222,6 +222,34 @@ function renderItems(items) {
                         <div class="progress-christmas h-2 rounded-full" style="width: ${progressPercent}%"></div>
                     </div>
                 </div>
+                
+                ${item.donors && Object.keys(item.donors).length > 0 ? `
+                    <div class="mt-4 border-t-2 border-gray-200 pt-3">
+                        <h4 class="font-bold text-gray-900 mb-2 text-sm">📋 Donor Details:</h4>
+                        <div class="space-y-2 max-h-48 overflow-y-auto">
+                            ${Object.values(item.donors).map(donor => {
+                                const donorDate = donor.createdAt ? formatDate(donor.createdAt) : 'Unknown date';
+                                return `
+                                    <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex-1">
+                                                <div class="font-semibold text-gray-900">${escapeHtml(donor.name)}</div>
+                                                <div class="text-gray-600 mt-1">
+                                                    <span class="font-medium">Amount:</span> ₹${formatCurrency(donor.amount)}
+                                                </div>
+                                                <div class="text-gray-500 mt-1">
+                                                    <span class="font-medium">Date:</span> ${donorDate}
+                                                </div>
+                                                ${donor.isAnonymous ? '<div class="text-orange-600 mt-1 text-xs">🔒 Marked as Anonymous (Public)</div>' : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
                 <div class="mt-3 flex gap-2">
                     <button onclick="editItem('${item.id}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer flex-1">
                         ✏️ Edit Item
@@ -234,6 +262,9 @@ function renderItems(items) {
         `;
     }).join('');
 }
+
+// Store current item donors for editing
+let currentItemDonors = {};
 
 async function editItem(itemId) {
     try {
@@ -250,8 +281,12 @@ async function editItem(itemId) {
         document.getElementById('edit-item-name').value = item.name || '';
         document.getElementById('edit-item-description').value = item.description || '';
         document.getElementById('edit-item-total').value = item.total || 0;
-        document.getElementById('edit-item-donated').value = item.donated || 0;
         document.getElementById('edit-item-status').value = item.status || 'available';
+
+        // Load and display donors
+        currentItemDonors = item.donors || {};
+        renderDonorsList();
+        updateTotalDonated();
 
         // Show modal
         document.getElementById('edit-item-modal').classList.remove('hidden');
@@ -264,6 +299,100 @@ async function editItem(itemId) {
 function closeEditModal() {
     document.getElementById('edit-item-modal').classList.add('hidden');
     document.getElementById('edit-item-form').reset();
+    currentItemDonors = {};
+    document.getElementById('donors-list-container').innerHTML = '<p class="text-xs text-gray-500 text-center py-2">No donors yet. Click "Add Donor" to add one.</p>';
+}
+
+function renderDonorsList() {
+    const container = document.getElementById('donors-list-container');
+    const donors = Object.entries(currentItemDonors);
+    
+    if (donors.length === 0) {
+        container.innerHTML = '<p class="text-xs text-gray-500 text-center py-2">No donors yet. Click "Add Donor" to add one.</p>';
+        return;
+    }
+    
+    container.innerHTML = donors.map(([donorKey, donor]) => {
+        const donorDate = donor.createdAt ? formatDate(donor.createdAt) : 'Unknown date';
+        return `
+            <div class="bg-gray-50 border border-gray-200 rounded p-3 donor-item" data-donor-key="${donorKey}">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex-1">
+                        <div class="font-semibold text-gray-900 text-sm">${escapeHtml(donor.name)}</div>
+                        <div class="text-xs text-gray-500 mt-1">${donorDate}</div>
+                        ${donor.isAnonymous ? '<div class="text-xs text-orange-600 mt-1">🔒 Anonymous (Public)</div>' : ''}
+                    </div>
+                    <button onclick="removeDonor('${donorKey}')" class="ml-2 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition" title="Remove Donor">
+                        🗑️
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-xs text-gray-600">Amount (₹):</label>
+                    <input type="number" 
+                           step="0.01" 
+                           min="0" 
+                           value="${donor.amount || 0}" 
+                           onchange="updateDonorAmount('${donorKey}', this.value)"
+                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateDonorAmount(donorKey, newAmount) {
+    const amount = parseFloat(newAmount);
+    if (isNaN(amount) || amount < 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+    
+    if (currentItemDonors[donorKey]) {
+        currentItemDonors[donorKey].amount = amount;
+        updateTotalDonated();
+    }
+}
+
+function removeDonor(donorKey) {
+    if (!confirm('Are you sure you want to remove this donor?')) {
+        return;
+    }
+    
+    delete currentItemDonors[donorKey];
+    renderDonorsList();
+    updateTotalDonated();
+}
+
+function addNewDonor() {
+    const name = prompt('Enter donor name:');
+    if (!name || !name.trim()) {
+        return;
+    }
+    
+    const amountStr = prompt('Enter donation amount (₹):');
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+    
+    const isAnonymous = confirm('Mark as anonymous for public display?');
+    
+    const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    currentItemDonors[donorKey] = {
+        name: name.trim(),
+        amount: amount,
+        isAnonymous: isAnonymous,
+        createdAt: Date.now()
+    };
+    
+    renderDonorsList();
+    updateTotalDonated();
+}
+
+function updateTotalDonated() {
+    const total = Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0);
+    document.getElementById('edit-total-donated').textContent = `₹${formatCurrency(total)}`;
 }
 
 async function handleUpdateItem(e) {
@@ -273,13 +402,15 @@ async function handleUpdateItem(e) {
     const name = document.getElementById('edit-item-name').value.trim();
     const description = document.getElementById('edit-item-description').value.trim();
     const total = parseFloat(document.getElementById('edit-item-total').value);
-    const donated = parseFloat(document.getElementById('edit-item-donated').value);
     const status = document.getElementById('edit-item-status').value;
 
-    if (!name || !total || total < 1 || donated < 0) {
+    if (!name || !total || total < 1) {
         alert('Please fill in all required fields correctly');
         return;
     }
+
+    // Calculate total donated from individual donors
+    const donated = Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0);
 
     if (donated > total) {
         if (!confirm(`Donated amount (₹${formatCurrency(donated)}) is greater than total (₹${formatCurrency(total)}). Continue anyway?`)) {
@@ -306,14 +437,10 @@ async function handleUpdateItem(e) {
             description: description || '',
             total: total,
             donated: donated,
+            donors: currentItemDonors, // Save all individual donors
             status: finalStatus,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
         };
-
-        // Clear donors if donated amount is set to 0
-        if (donated === 0) {
-            updateData.donors = {};
-        }
 
         // Update item
         await database.ref(`items/${itemId}`).update(updateData);
@@ -324,6 +451,8 @@ async function handleUpdateItem(e) {
         if (oldItem.total !== total) changes.push(`total: ₹${formatCurrency(oldItem.total)} → ₹${formatCurrency(total)}`);
         if (oldItem.donated !== donated) changes.push(`donated: ₹${formatCurrency(oldItem.donated)} → ₹${formatCurrency(donated)}`);
         if (oldItem.status !== finalStatus) changes.push(`status: "${oldItem.status}" → "${finalStatus}"`);
+        const donorCount = Object.keys(currentItemDonors).length;
+        changes.push(`donors: ${donorCount} donor(s)`);
 
         await logActivity('item_updated', `Updated item: ${name}. Changes: ${changes.join(', ')}`);
 
@@ -409,9 +538,10 @@ async function renderDonations(donations) {
             <div class="border-2 border-red-200 rounded-lg p-4">
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex-1">
-                        <h3 class="font-bold text-gray-900">${escapeHtml(donation.isAnonymous ? 'Anonymous' : donation.donorName)}</h3>
+                        <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName)}</h3>
                         <p class="text-sm text-gray-600">${escapeHtml(donation.donorEmail)}</p>
                         <p class="text-sm text-gray-600 mt-1">Item: <span class="font-medium">${escapeHtml(itemName)}</span></p>
+                        ${donation.isAnonymous ? '<p class="text-xs text-orange-600 mt-1">🔒 Marked as Anonymous (Public display only)</p>' : ''}
                     </div>
                     ${statusBadge}
                 </div>
