@@ -305,6 +305,14 @@ body {
     position: absolute;
 }
 
+/* Fix for donation amount input - ensure it's always clickable */
+#donation-amount {
+    position: relative !important;
+    z-index: 10 !important;
+    pointer-events: auto !important;
+    background-color: white !important;
+}
+
 .inset-0 {
     top: 0;
     right: 0;

@@ -52,11 +52,8 @@ function setupEventListeners() {
         }
     });
 
-    // Proceed to Payment button
-    document.getElementById('proceed-to-payment').addEventListener('click', handleProceedToPayment);
-    
-    // Final Submit Donation button in payment instructions modal
-    document.getElementById('submit-donation-final').addEventListener('click', handleDonationSubmit);
+    // Confirm button
+    document.getElementById('confirm-donation').addEventListener('click', handleConfirmDonation);
 }
 
 // Set filter and update UI
@@ -227,13 +224,6 @@ function createItemCard(item) {
                 </p>
             </div>
 
-            ${getDonorDisplay(item) ? `
-                <div class="mb-4 p-3 ${isFunded ? 'bg-green-50 border-2 border-green-300' : 'bg-blue-50 border-2 border-blue-300'} rounded-lg">
-                    <p class="text-sm ${isFunded ? 'text-green-800' : 'text-blue-800'} font-medium text-center">
-                        ${getDonorDisplay(item)}
-                    </p>
-                </div>
-            ` : ''}
 
             ${!isFunded ? `
                 <button id="donate-btn-${item.id}" class="w-full btn-christmas py-3 px-4 rounded-lg font-bold text-lg mt-auto">
@@ -314,6 +304,12 @@ function openDonationModal(item) {
     // Reset form
     document.getElementById('donation-form').reset();
     amountInput.value = '';
+    
+    // Re-enable confirm button (in case it was disabled from previous attempt)
+    const confirmBtn = document.getElementById('confirm-donation');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+    }
 
     modal.classList.remove('hidden');
     
@@ -345,11 +341,12 @@ function closeDonationModal() {
     console.log('✅ Donation modal closed');
 }
 
-// Handle Proceed to Payment button
-function handleProceedToPayment(e) {
+// Handle Confirm button - Save to admin and update amounts
+async function handleConfirmDonation(e) {
     e.preventDefault();
     
     const formError = document.getElementById('form-error');
+    const confirmBtn = document.getElementById('confirm-donation');
     formError.classList.add('hidden');
 
     if (!currentItem) {
@@ -359,8 +356,8 @@ function handleProceedToPayment(e) {
 
     const donorName = document.getElementById('donor-name').value.trim();
     const donorEmail = document.getElementById('donor-email').value.trim();
-    const amount = Math.round(parseFloat(document.getElementById('donation-amount').value) * 100) / 100; // Round to 2 decimal places
-    const isAnonymous = document.getElementById('is-anonymous').checked;
+    const donorPhone = document.getElementById('donor-phone').value.trim();
+    const amount = Math.round(parseFloat(document.getElementById('donation-amount').value) * 100) / 100;
 
     // Validation
     if (!donorName || donorName.length < 2) {
@@ -370,6 +367,18 @@ function handleProceedToPayment(e) {
 
     if (!donorEmail || !isValidEmail(donorEmail)) {
         showFormError('Please enter a valid email address');
+        return;
+    }
+
+    if (!donorPhone || donorPhone.length < 10) {
+        showFormError('Please enter a valid phone number (minimum 10 digits)');
+        return;
+    }
+    
+    // Validate phone number format (allows +, spaces, hyphens, parentheses, and digits)
+    const phoneRegex = /^[\d\s\+\-\(\)]+$/;
+    if (!phoneRegex.test(donorPhone)) {
+        showFormError('Please enter a valid phone number');
         return;
     }
 
@@ -384,105 +393,42 @@ function handleProceedToPayment(e) {
         return;
     }
 
-    // Store form data temporarily
-    window.pendingDonation = {
-        donorName,
-        donorEmail,
-        amount,
-        isAnonymous,
-        itemId: currentItem.id
-    };
-
-    // Close donation form modal
-    closeDonationModal();
-    
-    // Show payment instructions modal
-    setTimeout(() => {
-        showPaymentInstructionsModal();
-    }, 200);
-}
-
-// Handle donation form submission (from payment instructions modal)
-async function handleDonationSubmit(e) {
-    e.preventDefault();
-    
-    if (!window.pendingDonation) {
-        alert('No donation data found. Please fill the form again.');
-        closePaymentInstructionsModal();
-        return;
-    }
-
-    const formError = document.getElementById('form-error');
-    const errorMessage = document.getElementById('error-message');
-    const submitBtn = document.getElementById('submit-donation-final');
-    
-    const { donorName, donorEmail, amount, isAnonymous, itemId } = window.pendingDonation;
-    
-    // Get current item
-    const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
-    const itemData = itemSnapshot.val();
-    if (!itemData) {
-        alert('Item not found. Please try again.');
-        closePaymentInstructionsModal();
-        return;
-    }
-    
-    currentItem = { id: itemId, ...itemData };
-
-    // Disable submit button
-    submitBtn.disabled = true;
-    submitBtn.textContent = '⏳ Submitting...';
-
-    // Check Firebase connection first
-    if (!database) {
-        console.error('❌ Firebase database not initialized!');
-        showFormError('Firebase connection error. Please check firebase-config.js');
-        submitBtn.disabled = false;
-        submitBtn.textContent = '🎁 Submit Donation';
-        return;
-    }
+    // Disable button
+    confirmBtn.disabled = true;
 
     try {
-        console.log('🔄 Starting donation submission...');
-        console.log('📦 Current item:', currentItem);
-        console.log('💰 Donation amount:', amount);
-        
-        // Test Firebase connection by trying to read
-        const testRef = database.ref('items');
-        await testRef.once('value');
-        console.log('✅ Firebase connection verified');
-        
-        // Create donation record
+        // Check Firebase connection
+        if (!database) {
+            throw new Error('Firebase connection error. Please check firebase-config.js');
+        }
+
+        // Save donation to admin
         const donationId = database.ref('donations').push().key;
-        console.log('📝 Donation ID generated:', donationId);
-        
         const donation = {
             itemId: currentItem.id,
             donorName,
             donorEmail,
+            donorPhone,
             amount,
-            isAnonymous,
-            status: 'pending', // Admin can verify later if needed
-            createdAt: firebase.database.ServerValue.TIMESTAMP
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+            verified: false
         };
 
-        // Save donation
-        console.log('💾 Saving donation to Firebase...');
+        console.log('💾 Saving donation to admin...');
         await database.ref(`donations/${donationId}`).set(donation);
-        console.log('✅ Donation saved to Firebase:', donationId);
-        
-        // Update item: add amount and donor immediately (for real-time UI update)
+        console.log('✅ Donation saved to admin:', donationId);
+
+        // Update item: add amount and donor immediately (reflects on main page)
         const currentDonated = Math.round((currentItem.donated || 0) * 100) / 100;
         const newDonated = Math.round((currentDonated + amount) * 100) / 100;
         
         // Get or initialize donors object
         const donors = currentItem.donors || {};
-        // Generate a unique key for the donor
         const donorKey = database.ref('donors').push().key;
         donors[donorKey] = {
             name: donorName,
-            amount: amount,
-            isAnonymous: isAnonymous
+            amount: amount
         };
         
         // Update item with new donated amount and donor
@@ -491,27 +437,22 @@ async function handleDonationSubmit(e) {
             donors: donors
         };
         
-        console.log('💾 Updating item with donation amount...');
-        console.log('💰 Current donated:', currentDonated);
-        console.log('💰 New donated:', newDonated);
-        await database.ref(`items/${itemId}`).update(itemUpdate);
-        console.log('✅ Item updated in Firebase successfully!');
-        console.log('✅ Real-time listener should update UI automatically');
-        console.log('⏳ Waiting for real-time update...');
-        
-        // Force a small delay to ensure Firebase processes the update
-        await new Promise(resolve => setTimeout(resolve, 100));
+        console.log('💾 Updating item amounts (Collected/Remaining)...');
+        await database.ref(`items/${currentItem.id}`).update(itemUpdate);
+        console.log('✅ Item amounts updated - will reflect on main page');
+        console.log('💰 Collected:', newDonated);
 
-        // Track donation for analytics (don't block on errors)
-        try {
-            if (typeof trackDonation === 'function') {
-                await trackDonation();
-            }
-        } catch (err) {
-            console.warn('Analytics tracking failed:', err);
-        }
+        // Store donation ID for reference
+        window.pendingDonation = {
+            donationId,
+            donorName,
+            donorEmail,
+            donorPhone,
+            amount,
+            itemId: currentItem.id
+        };
 
-        // Create notification for admin (don't block on errors)
+        // Create notification for admin
         try {
             if (typeof createNotification === 'function') {
                 const itemName = currentItem.name || 'Unknown Item';
@@ -523,9 +464,134 @@ async function handleDonationSubmit(e) {
             console.warn('Notification creation failed:', err);
         }
 
+        // Re-enable button before closing modal
+        confirmBtn.disabled = false;
+        
+        // Close donation form modal
+        closeDonationModal();
+        
+        // Show payment instructions modal
+        setTimeout(() => {
+            showPaymentInstructionsModal();
+        }, 200);
+
+    } catch (error) {
+        console.error('❌ Error saving donation:', error);
+        showFormError(error.message || 'Failed to save donation. Please try again.');
+        confirmBtn.disabled = false;
+    }
+}
+
+// Handle Submit Donation button (from payment instructions modal) - Save to admin and update amounts again
+async function handleSubmitDonation(e) {
+    e.preventDefault();
+    
+    if (!window.pendingDonation) {
+        alert('No donation data found. Please fill the form again.');
+        closePaymentInstructionsModal();
+        return;
+    }
+
+    const submitBtn = document.getElementById('submit-donation-final');
+    
+    // Disable submit button
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Submitting...';
+
+    try {
+        const { donationId, donorName, donorEmail, donorPhone, amount, itemId } = window.pendingDonation;
+        
+        // Check Firebase connection
+        if (!database) {
+            throw new Error('Firebase connection error. Please check firebase-config.js');
+        }
+
+        // Get current item
+        const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
+        const itemData = itemSnapshot.val();
+        if (!itemData) {
+            throw new Error('Item not found. Please try again.');
+        }
+        
+        // Save/update donation to admin
+        const donation = {
+            itemId: itemId,
+            donorName,
+            donorEmail,
+            donorPhone,
+            amount,
+            status: 'pending',
+            submittedAt: new Date().toISOString(),
+            paymentCompleted: true,
+            verified: false
+        };
+
+        console.log('💾 Saving donation to admin (after payment)...');
+        await database.ref(`donations/${donationId}`).set(donation);
+        console.log('✅ Donation saved to admin:', donationId);
+
+        // Update item: add amount and donor (reflects on main page)
+        // Check if this donation was already added (from Confirm button)
+        const currentDonated = Math.round((itemData.donated || 0) * 100) / 100;
+        
+        // Check if donor already exists in the item's donors list
+        const existingDonors = itemData.donors || {};
+        let donorExists = false;
+        for (const key in existingDonors) {
+            const donor = existingDonors[key];
+            if (donor.name === donorName && Math.round(donor.amount * 100) / 100 === amount) {
+                donorExists = true;
+                break;
+            }
+        }
+        
+        let newDonated = currentDonated;
+        const donors = { ...existingDonors };
+        
+        if (!donorExists) {
+            // Add amount and donor only if not already added
+            newDonated = Math.round((currentDonated + amount) * 100) / 100;
+            const donorKey = database.ref('donors').push().key;
+            donors[donorKey] = {
+                name: donorName,
+                amount: amount
+            };
+        }
+        
+        // Update item with donated amount and donors
+        const itemUpdate = {
+            donated: newDonated,
+            donors: donors
+        };
+        
+        console.log('💾 Updating item amounts (Collected/Remaining)...');
+        await database.ref(`items/${itemId}`).update(itemUpdate);
+        console.log('✅ Item amounts updated - will reflect on main page');
+        console.log('💰 Collected:', newDonated);
+
+        // Track donation for analytics
+        try {
+            if (typeof trackDonation === 'function') {
+                await trackDonation();
+            }
+        } catch (err) {
+            console.warn('Analytics tracking failed:', err);
+        }
+
+        // Create notification for admin
+        try {
+            if (typeof createNotification === 'function') {
+                const itemName = itemData.name || 'Unknown Item';
+                await createNotification('new_donation', 
+                    `New donation: ₹${amount.toLocaleString('en-IN')} for ${itemName}`, 
+                    itemId);
+            }
+        } catch (err) {
+            console.warn('Notification creation failed:', err);
+        }
+
         console.log('✅ Donation submitted successfully!');
-        console.log('✅ Amount added to item - UI will update in real-time');
-        console.log('⏳ Donation status: PENDING - Admin can verify payment later');
+        console.log('✅ Donation saved to admin and amounts updated on main page');
         
         // Close payment instructions modal
         closePaymentInstructionsModal();
@@ -533,7 +599,7 @@ async function handleDonationSubmit(e) {
         
         // Show success message
         setTimeout(() => {
-            alert('✅ Thank you! Your donation has been submitted successfully. Please complete the payment using the QR code or bank transfer details shown earlier. Your donation will be verified by admin and the amount will be added after verification.');
+            alert('✅ Thank you! Your donation has been submitted successfully. The amounts (Collected/Remaining) have been updated on the main page. Your donation will be verified by admin.');
         }, 200);
         
         // Re-enable submit button
@@ -545,27 +611,9 @@ async function handleDonationSubmit(e) {
 
     } catch (error) {
         console.error('❌ Error submitting donation:', error);
-        console.error('Error name:', error.name);
-        console.error('Error message:', error.message);
-        console.error('Error code:', error.code);
-        if (error.stack) console.error('Stack:', error.stack);
-        
-        // Check for specific Firebase errors
-        let errorMessage = 'Failed to submit donation. ';
-        if (error.code === 'PERMISSION_DENIED' || error.message.includes('permission')) {
-            errorMessage += 'Permission denied. Please check Firebase database rules allow writes.';
-        } else if (error.code === 'NETWORK_ERROR' || error.message.includes('network')) {
-            errorMessage += 'Network error. Please check your internet connection.';
-        } else if (error.message.includes('Item not found')) {
-            errorMessage += 'Item not found in database. Please refresh the page and try again.';
-        } else {
-            errorMessage += 'Error: ' + (error.message || 'Unknown error') + '. Check console (F12) for details.';
-        }
-        
-        showFormError(errorMessage);
+        alert(error.message || 'An error occurred. Please try again.');
         submitBtn.disabled = false;
         submitBtn.textContent = '🎁 Submit Donation';
-        // Modal stays open so user can see error and retry
     }
 }
 
