@@ -24,7 +24,7 @@ const auth = firebase.auth();
 // Google Drive Upload Configuration
 // Replace this with your Google Apps Script Web App URL after setup
 // Make it globally accessible
-var GOOGLE_DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzZgw7xSz1HZ2nGY8W1p974pu3RuEfUoRpHUxVbmu9ejQTn-Sc4s_qWAgpvEA7G1kFQ/exec'; // Set this in firebase-config.js after creating the Apps Script
+var GOOGLE_DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzsrKwGGjO4gwZCkd0UZdqbB9vB-_Ntlq0yii-wjhzDy2-Zz_vVZIF-aeObGxvI3C7Z/exec'; // Set this in firebase-config.js after creating the Apps Script
 
 // Also set on window object for compatibility
 if (typeof window !== 'undefined') {
