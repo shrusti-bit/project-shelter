@@ -300,15 +300,23 @@ async function handleUpdateItem(e) {
         // Determine status based on amounts
         const finalStatus = donated >= total ? 'funded' : status;
 
-        // Update item
-        await database.ref(`items/${itemId}`).update({
+        // Prepare update data
+        const updateData = {
             name: name,
             description: description || '',
             total: total,
             donated: donated,
             status: finalStatus,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
-        });
+        };
+
+        // Clear donors if donated amount is set to 0
+        if (donated === 0) {
+            updateData.donors = {};
+        }
+
+        // Update item
+        await database.ref(`items/${itemId}`).update(updateData);
 
         // Log activity with change details
         const changes = [];
