@@ -52,8 +52,11 @@ function setupEventListeners() {
         }
     });
 
-    // Donation form
-    document.getElementById('donation-form').addEventListener('submit', handleDonationSubmit);
+    // Proceed to Payment button
+    document.getElementById('proceed-to-payment').addEventListener('click', handleProceedToPayment);
+    
+    // Final Submit Donation button in payment instructions modal
+    document.getElementById('submit-donation-final').addEventListener('click', handleDonationSubmit);
 }
 
 // Set filter and update UI
@@ -258,30 +261,20 @@ function getDonorDisplay(item) {
     if (donors.length === 1) {
         const donor = donors[0];
         if (donor.isAnonymous) {
-            return isFullyFunded ? '🎁 Donated by Anonymous' : '💝 Partially donated by Anonymous';
+            return '🎁 Donated by Anonymous';
         }
-        return isFullyFunded 
-            ? `🎁 Donated by ${escapeHtml(donor.name)}` 
-            : `💝 Partially donated by ${escapeHtml(donor.name)}`;
+        return `🎁 Donated by ${escapeHtml(donor.name)}`;
     }
     
     // Multiple donors case
     if (namedDonors.length === 0) {
         // All anonymous
-        return isFullyFunded 
-            ? `🎁 Donated by ${donors.length} Anonymous Donor${donors.length > 1 ? 's' : ''}`
-            : `💝 Partially donated by ${donors.length} Anonymous Donor${donors.length > 1 ? 's' : ''}`;
+        return `🎁 Donated by ${donors.length} Anonymous Donor${donors.length > 1 ? 's' : ''}`;
     }
     
     // Mix of named and anonymous
     const donorNames = namedDonors.map(d => escapeHtml(d.name));
-    let displayText = '';
-    
-    if (isFullyFunded) {
-        displayText = '🎁 Donated by: ';
-    } else {
-        displayText = '💝 Partially donated by: ';
-    }
+    let displayText = '🎁 Donated by: ';
     
     if (donorNames.length > 0) {
         displayText += donorNames.join(', ');
@@ -352,14 +345,11 @@ function closeDonationModal() {
     console.log('✅ Donation modal closed');
 }
 
-// Handle donation form submission
-async function handleDonationSubmit(e) {
+// Handle Proceed to Payment button
+function handleProceedToPayment(e) {
     e.preventDefault();
     
     const formError = document.getElementById('form-error');
-    const errorMessage = document.getElementById('error-message');
-    const submitBtn = document.getElementById('submit-donation');
-
     formError.classList.add('hidden');
 
     if (!currentItem) {
@@ -371,7 +361,6 @@ async function handleDonationSubmit(e) {
     const donorEmail = document.getElementById('donor-email').value.trim();
     const amount = Math.round(parseFloat(document.getElementById('donation-amount').value) * 100) / 100; // Round to 2 decimal places
     const isAnonymous = document.getElementById('is-anonymous').checked;
-    const paymentConfirmed = document.getElementById('payment-confirmed').checked;
 
     // Validation
     if (!donorName || donorName.length < 2) {
@@ -395,10 +384,50 @@ async function handleDonationSubmit(e) {
         return;
     }
 
-    if (!paymentConfirmed) {
-        showFormError('Please confirm payment');
+    // Store form data temporarily
+    window.pendingDonation = {
+        donorName,
+        donorEmail,
+        amount,
+        isAnonymous,
+        itemId: currentItem.id
+    };
+
+    // Close donation form modal
+    closeDonationModal();
+    
+    // Show payment instructions modal
+    setTimeout(() => {
+        showPaymentInstructionsModal();
+    }, 200);
+}
+
+// Handle donation form submission (from payment instructions modal)
+async function handleDonationSubmit(e) {
+    e.preventDefault();
+    
+    if (!window.pendingDonation) {
+        alert('No donation data found. Please fill the form again.');
+        closePaymentInstructionsModal();
         return;
     }
+
+    const formError = document.getElementById('form-error');
+    const errorMessage = document.getElementById('error-message');
+    const submitBtn = document.getElementById('submit-donation-final');
+    
+    const { donorName, donorEmail, amount, isAnonymous, itemId } = window.pendingDonation;
+    
+    // Get current item
+    const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
+    const itemData = itemSnapshot.val();
+    if (!itemData) {
+        alert('Item not found. Please try again.');
+        closePaymentInstructionsModal();
+        return;
+    }
+    
+    currentItem = { id: itemId, ...itemData };
 
     // Disable submit button
     submitBtn.disabled = true;
@@ -437,51 +466,35 @@ async function handleDonationSubmit(e) {
             createdAt: firebase.database.ServerValue.TIMESTAMP
         };
 
-        // Save donation first
+        // Save donation
         console.log('💾 Saving donation to Firebase...');
         await database.ref(`donations/${donationId}`).set(donation);
         console.log('✅ Donation saved to Firebase:', donationId);
-
-        // IMMEDIATELY update item with donation amount (real-time update)
-        console.log('🔄 Updating item in Firebase...');
-        const itemRef = database.ref(`items/${currentItem.id}`);
-        console.log('📦 Item reference:', currentItem.id);
         
-        const itemSnapshot = await itemRef.once('value');
-        const itemData = itemSnapshot.val();
-        console.log('📊 Current item data:', itemData);
-
-        if (!itemData) {
-            throw new Error(`Item not found in database: ${currentItem.id}`);
-        }
-
-        const currentDonated = Math.round((itemData.donated || 0) * 100) / 100; // Round to 2 decimal places
-        const newDonated = Math.round((currentDonated + amount) * 100) / 100; // Round to 2 decimal places
-        const donors = itemData.donors || {};
-        const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Update item: add amount and donor immediately (for real-time UI update)
+        const currentDonated = Math.round((currentItem.donated || 0) * 100) / 100;
+        const newDonated = Math.round((currentDonated + amount) * 100) / 100;
         
+        // Get or initialize donors object
+        const donors = currentItem.donors || {};
+        // Generate a unique key for the donor
+        const donorKey = database.ref('donors').push().key;
         donors[donorKey] = {
             name: donorName,
-            amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
-            isAnonymous: isAnonymous,
-            donationId: donationId,
-            createdAt: firebase.database.ServerValue.TIMESTAMP
+            amount: amount,
+            isAnonymous: isAnonymous
         };
-
-        // Update item: add donated amount and update status
-        // This will trigger the real-time listener automatically
-        console.log('💾 Updating item with new amount...');
-        console.log('   Previous donated:', currentDonated);
-        console.log('   New donated:', newDonated);
-        console.log('   Donation amount:', amount);
         
-        await itemRef.update({
+        // Update item with new donated amount and donor
+        const itemUpdate = {
             donated: newDonated,
-            donors: donors,
-            status: newDonated >= itemData.total ? 'funded' : 'available',
-            updatedAt: firebase.database.ServerValue.TIMESTAMP
-        });
-
+            donors: donors
+        };
+        
+        console.log('💾 Updating item with donation amount...');
+        console.log('💰 Current donated:', currentDonated);
+        console.log('💰 New donated:', newDonated);
+        await database.ref(`items/${itemId}`).update(itemUpdate);
         console.log('✅ Item updated in Firebase successfully!');
         console.log('✅ Real-time listener should update UI automatically');
         console.log('⏳ Waiting for real-time update...');
@@ -511,23 +524,24 @@ async function handleDonationSubmit(e) {
         }
 
         console.log('✅ Donation submitted successfully!');
-        console.log('✅ Item updated with amount:', amount);
-        console.log('✅ Real-time listener should update UI automatically');
-        console.log('🔄 Closing modal and showing success...');
+        console.log('✅ Amount added to item - UI will update in real-time');
+        console.log('⏳ Donation status: PENDING - Admin can verify payment later');
         
-        // Close donation modal immediately
-        closeDonationModal();
-        console.log('✅ Modal closed');
+        // Close payment instructions modal
+        closePaymentInstructionsModal();
+        console.log('✅ Payment instructions modal closed');
         
-        // Show success modal after brief delay
+        // Show success message
         setTimeout(() => {
-            showSuccessModal();
-            console.log('✅ Success modal shown');
+            alert('✅ Thank you! Your donation has been submitted successfully. Please complete the payment using the QR code or bank transfer details shown earlier. Your donation will be verified by admin and the amount will be added after verification.');
         }, 200);
         
         // Re-enable submit button
         submitBtn.disabled = false;
         submitBtn.textContent = '🎁 Submit Donation';
+        
+        // Clear pending donation data
+        window.pendingDonation = null;
 
     } catch (error) {
         console.error('❌ Error submitting donation:', error);
@@ -563,31 +577,46 @@ function showFormError(message) {
     formError.classList.remove('hidden');
 }
 
-// Show success modal
-function showSuccessModal() {
-    const modal = document.getElementById('success-modal');
+// Show payment instructions modal
+function showPaymentInstructionsModal() {
+    console.log('🔄 Attempting to show payment instructions modal...');
+    const modal = document.getElementById('payment-instructions-modal');
     if (!modal) {
-        console.error('Success modal not found');
-        alert('✅ Thank you! Your donation has been submitted successfully!');
+        console.error('❌ Payment instructions modal not found in DOM');
+        alert('✅ Thank you! Your donation has been submitted. Please complete the payment. Amount will be added after admin verification.');
         return;
     }
     
+    console.log('✅ Modal found, removing hidden class...');
     // Show modal
     modal.classList.remove('hidden');
+    console.log('✅ Modal should now be visible');
     
-    // Auto-close after 5 seconds
-    setTimeout(() => {
-        modal.classList.add('hidden');
-    }, 5000);
+    // Also allow clicking outside to close (remove old listeners first)
+    const oldHandler = modal._closeHandler;
+    if (oldHandler) {
+        modal.removeEventListener('click', oldHandler);
+    }
     
-    // Also allow clicking outside to close
-    modal.addEventListener('click', function closeOnClick(e) {
+    const closeOnClick = function(e) {
         if (e.target === modal) {
-            modal.classList.add('hidden');
-            modal.removeEventListener('click', closeOnClick);
+            closePaymentInstructionsModal();
         }
-    });
+    };
+    modal._closeHandler = closeOnClick;
+    modal.addEventListener('click', closeOnClick);
 }
+
+function closePaymentInstructionsModal() {
+    const modal = document.getElementById('payment-instructions-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        console.log('✅ Payment instructions modal closed');
+    }
+}
+
+// Make function globally accessible for onclick handlers
+window.closePaymentInstructionsModal = closePaymentInstructionsModal;
 
 // Utility functions
 function formatCurrency(amount) {
