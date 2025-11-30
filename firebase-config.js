@@ -20,4 +20,3 @@ const database = firebase.database();
 
 // Get reference to Firebase Authentication
 const auth = firebase.auth();
-
