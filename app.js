@@ -393,26 +393,47 @@ async function handleDonationSubmit(e) {
             // detect this change and update the UI immediately
         }
 
-        // Track donation for analytics
-        if (typeof trackDonation === 'function') {
-            await trackDonation();
+        // Track donation for analytics (don't block on errors)
+        try {
+            if (typeof trackDonation === 'function') {
+                await trackDonation();
+            }
+        } catch (err) {
+            console.warn('Analytics tracking failed:', err);
         }
 
-        // Create notification for admin
-        if (typeof createNotification === 'function') {
-            const itemName = currentItem.name || 'Unknown Item';
-            await createNotification('new_donation', 
-                `New donation: ₹${amount.toLocaleString('en-IN')} for ${itemName}`, 
-                currentItem.id);
+        // Create notification for admin (don't block on errors)
+        try {
+            if (typeof createNotification === 'function') {
+                const itemName = currentItem.name || 'Unknown Item';
+                await createNotification('new_donation', 
+                    `New donation: ₹${amount.toLocaleString('en-IN')} for ${itemName}`, 
+                    currentItem.id);
+            }
+        } catch (err) {
+            console.warn('Notification creation failed:', err);
         }
 
-        // Show success
+        // Reset form
+        document.getElementById('donation-form').reset();
+        
+        // Close donation modal first
         closeDonationModal();
-        showSuccessModal();
+        
+        // Small delay to ensure modal closes before showing success
+        setTimeout(() => {
+            showSuccessModal();
+        }, 300);
+        
+        // Re-enable submit button
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🎁 Submit Donation';
+        
+        console.log('✅ Donation submitted successfully!');
 
     } catch (error) {
         console.error('Error submitting donation:', error);
-        showFormError('Failed to submit donation. Please try again.');
+        showFormError('Failed to submit donation. Please try again. Error: ' + error.message);
         submitBtn.disabled = false;
         submitBtn.textContent = '🎁 Submit Donation';
     }
@@ -429,11 +450,27 @@ function showFormError(message) {
 // Show success modal
 function showSuccessModal() {
     const modal = document.getElementById('success-modal');
+    if (!modal) {
+        console.error('Success modal not found');
+        alert('✅ Thank you! Your donation has been submitted successfully!');
+        return;
+    }
+    
+    // Show modal
     modal.classList.remove('hidden');
     
+    // Auto-close after 5 seconds
     setTimeout(() => {
         modal.classList.add('hidden');
-    }, 3000);
+    }, 5000);
+    
+    // Also allow clicking outside to close
+    modal.addEventListener('click', function closeOnClick(e) {
+        if (e.target === modal) {
+            modal.classList.add('hidden');
+            modal.removeEventListener('click', closeOnClick);
+        }
+    });
 }
 
 // Utility functions
