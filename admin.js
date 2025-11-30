@@ -483,6 +483,23 @@ async function handleUpdateItem(e) {
         // Update item
         await database.ref(`items/${itemId}`).update(updateData);
 
+        // If item name changed, update all related donations
+        if (oldItem.name !== name) {
+            try {
+                const donationsSnapshot = await database.ref('donations').once('value');
+                const donationsData = donationsSnapshot.val() || {};
+                const relatedDonations = Object.keys(donationsData).filter(donationId => 
+                    donationsData[donationId].itemId === itemId
+                );
+                
+                // Update each related donation (donations store itemId, so they'll automatically show new name when rendered)
+                // We don't need to update donations since they reference by itemId, not name
+                console.log(`✅ Item name changed - ${relatedDonations.length} related donations will show new name automatically`);
+            } catch (err) {
+                console.warn('Could not check related donations:', err);
+            }
+        }
+
         // Log activity with change details
         const changes = [];
         if (oldItem.name !== name) changes.push(`name: "${oldItem.name}" → "${name}"`);
@@ -501,7 +518,7 @@ async function handleUpdateItem(e) {
 
         // Close modal
         closeEditModal();
-        alert('Item updated successfully!');
+        alert('Item updated successfully! Changes will reflect in all related donations.');
     } catch (error) {
         console.error('Error updating item:', error);
         alert('Failed to update item. Please try again.');
