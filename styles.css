@@ -836,6 +836,49 @@ body {
     animation: glow 3s ease-in-out infinite alternate;
 }
 
+/* Santa Emoji - Make it visible with strong glow and shadow */
+.santa-emoji {
+    -webkit-text-fill-color: initial !important;
+    background: none !important;
+    -webkit-background-clip: unset !important;
+    background-clip: unset !important;
+    color: #ffffff !important;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 1)) 
+            drop-shadow(0 0 20px rgba(255, 255, 255, 0.8))
+            drop-shadow(0 0 30px rgba(220, 20, 60, 0.6))
+            drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+    display: inline-block;
+    font-size: 1.2em;
+    text-shadow: 0 0 15px rgba(255, 255, 255, 1),
+                 0 0 25px rgba(255, 255, 255, 0.8),
+                 0 0 35px rgba(220, 20, 60, 0.6),
+                 2px 2px 4px rgba(0, 0, 0, 0.7);
+    animation: santaGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes santaGlow {
+    from {
+        filter: drop-shadow(0 0 10px rgba(255, 255, 255, 1)) 
+                drop-shadow(0 0 20px rgba(255, 255, 255, 0.8))
+                drop-shadow(0 0 30px rgba(220, 20, 60, 0.6))
+                drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+        text-shadow: 0 0 15px rgba(255, 255, 255, 1),
+                     0 0 25px rgba(255, 255, 255, 0.8),
+                     0 0 35px rgba(220, 20, 60, 0.6),
+                     2px 2px 4px rgba(0, 0, 0, 0.7);
+    }
+    to {
+        filter: drop-shadow(0 0 15px rgba(255, 255, 255, 1)) 
+                drop-shadow(0 0 25px rgba(255, 255, 255, 1))
+                drop-shadow(0 0 40px rgba(220, 20, 60, 0.8))
+                drop-shadow(3px 3px 6px rgba(0, 0, 0, 0.6));
+        text-shadow: 0 0 20px rgba(255, 255, 255, 1),
+                     0 0 30px rgba(255, 255, 255, 1),
+                     0 0 45px rgba(220, 20, 60, 0.8),
+                     3px 3px 6px rgba(0, 0, 0, 0.8);
+    }
+}
+
 @keyframes glow {
     from {
         filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
