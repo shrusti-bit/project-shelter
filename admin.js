@@ -8,7 +8,18 @@ let currentTab = 'dashboard';
 document.addEventListener('DOMContentLoaded', () => {
     // Check Firebase Auth
     auth.onAuthStateChanged((user) => {
-        if (!user) {
+        // Check if user was explicitly logged out
+        const wasLoggedOut = sessionStorage.getItem('loggedOut');
+        if (!user || wasLoggedOut === 'true') {
+            sessionStorage.removeItem('loggedOut');
+            window.location.href = 'admin-login.html';
+            return;
+        }
+        
+        // Verify sessionStorage has admin data
+        const adminEmail = sessionStorage.getItem('adminEmail');
+        if (!adminEmail) {
+            // No session data, redirect to login
             window.location.href = 'admin-login.html';
             return;
         }
@@ -100,12 +111,28 @@ function switchTab(tabName) {
 
 async function handleLogout() {
     try {
+        // Mark as logged out in sessionStorage
+        sessionStorage.setItem('loggedOut', 'true');
+        
+        // Clear sessionStorage
+        sessionStorage.removeItem('adminEmail');
+        sessionStorage.removeItem('adminUid');
+        
+        // Sign out from Firebase Auth
         await auth.signOut();
+        
+        // Log activity
         await logActivity('admin_logout', 'Admin logged out');
+        
+        // Redirect to login page
         window.location.href = 'admin-login.html';
     } catch (error) {
         console.error('Logout error:', error);
-        alert('Error logging out. Please try again.');
+        // Clear sessionStorage even if signOut fails
+        sessionStorage.setItem('loggedOut', 'true');
+        sessionStorage.removeItem('adminEmail');
+        sessionStorage.removeItem('adminUid');
+        window.location.href = 'admin-login.html';
     }
 }
 
@@ -130,7 +157,7 @@ async function handleAddItem(e) {
 
     const name = document.getElementById('item-name').value.trim();
     const description = document.getElementById('item-description').value.trim();
-    const total = parseFloat(document.getElementById('item-total').value);
+    const total = Math.round(parseFloat(document.getElementById('item-total').value) * 100) / 100; // Round to 2 decimal places
 
     if (!name || !total || total < 1) {
         alert('Please fill in all required fields correctly');
@@ -341,7 +368,7 @@ function renderDonorsList() {
 }
 
 function updateDonorAmount(donorKey, newAmount) {
-    const amount = parseFloat(newAmount);
+    const amount = Math.round(parseFloat(newAmount) * 100) / 100; // Round to 2 decimal places
     if (isNaN(amount) || amount < 0) {
         alert('Please enter a valid amount');
         return;
@@ -370,7 +397,7 @@ function addNewDonor() {
     }
     
     const amountStr = prompt('Enter donation amount (₹):');
-    const amount = parseFloat(amountStr);
+    const amount = Math.round(parseFloat(amountStr) * 100) / 100; // Round to 2 decimal places
     if (isNaN(amount) || amount <= 0) {
         alert('Please enter a valid amount');
         return;
@@ -391,7 +418,7 @@ function addNewDonor() {
 }
 
 function updateTotalDonated() {
-    const total = Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0);
+    const total = Math.round(Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0) * 100) / 100; // Round to 2 decimal places
     document.getElementById('edit-total-donated').textContent = `₹${formatCurrency(total)}`;
 }
 
@@ -401,7 +428,7 @@ async function handleUpdateItem(e) {
     const itemId = document.getElementById('edit-item-id').value;
     const name = document.getElementById('edit-item-name').value.trim();
     const description = document.getElementById('edit-item-description').value.trim();
-    const total = parseFloat(document.getElementById('edit-item-total').value);
+    const total = Math.round(parseFloat(document.getElementById('edit-item-total').value) * 100) / 100; // Round to 2 decimal places
     const status = document.getElementById('edit-item-status').value;
 
     if (!name || !total || total < 1) {
@@ -410,7 +437,7 @@ async function handleUpdateItem(e) {
     }
 
     // Calculate total donated from individual donors
-    const donated = Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0);
+    const donated = Math.round(Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0) * 100) / 100; // Round to 2 decimal places
 
     if (donated > total) {
         if (!confirm(`Donated amount (₹${formatCurrency(donated)}) is greater than total (₹${formatCurrency(total)}). Continue anyway?`)) {

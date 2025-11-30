@@ -904,60 +904,7 @@ body {
     }
 }
 
-/* Santa Image - Leftmost Position */
-.santa-leftmost {
-    flex-shrink: 0;
-    width: 220px;
-    height: auto;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    margin-left: -20px;
-}
-
-.santa-image-left {
-    width: 100%;
-    height: auto;
-    max-width: 250px;
-    object-fit: contain;
-    filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.4)) 
-            drop-shadow(0 0 50px rgba(220, 20, 60, 0.3))
-            drop-shadow(0 0 70px rgba(255, 215, 0, 0.2))
-            drop-shadow(5px 5px 15px rgba(0, 0, 0, 0.3));
-    animation: santaFloat 4s ease-in-out infinite;
-    z-index: 2;
-}
-
-@keyframes santaFloat {
-    0%, 100% {
-        transform: translateY(0) scale(1);
-        filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.4)) 
-                drop-shadow(0 0 50px rgba(220, 20, 60, 0.3))
-                drop-shadow(0 0 70px rgba(255, 215, 0, 0.2))
-                drop-shadow(5px 5px 15px rgba(0, 0, 0, 0.3));
-    }
-    50% {
-        transform: translateY(-10px) scale(1.03);
-        filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.5)) 
-                drop-shadow(0 0 60px rgba(220, 20, 60, 0.4))
-                drop-shadow(0 0 80px rgba(255, 215, 0, 0.3))
-                drop-shadow(6px 6px 20px rgba(0, 0, 0, 0.4));
-    }
-}
-
-
-/* Responsive Santa Leftmost */
-@media (max-width: 1024px) {
-    .santa-leftmost {
-        width: 180px;
-        margin-left: -10px;
-    }
-    
-    .santa-image-left {
-        max-width: 200px;
-    }
-}
-
+/* Responsive Santa Emoji */
 @media (max-width: 768px) {
     .santa-emoji-large {
         font-size: 3rem;
@@ -966,17 +913,6 @@ body {
     .title-christmas {
         font-size: 1.4rem !important;
         line-height: 1.3;
-    }
-    
-    .santa-leftmost {
-        width: 100%;
-        max-width: 200px;
-        margin: 0 auto 20px;
-        justify-content: center;
-    }
-    
-    .santa-image-left {
-        max-width: 200px;
     }
 }
 
@@ -987,14 +923,6 @@ body {
     
     .title-christmas {
         font-size: 1.1rem !important;
-    }
-    
-    .santa-leftmost {
-        max-width: 150px;
-    }
-    
-    .santa-image-left {
-        max-width: 150px;
     }
 }
 

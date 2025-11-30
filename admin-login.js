@@ -1,11 +1,24 @@
 // Admin Login JavaScript with Firebase Authentication
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Check if already logged in
+    // Clear any stale session data first
+    const wasLoggedOut = sessionStorage.getItem('loggedOut');
+    if (wasLoggedOut === 'true') {
+        // User explicitly logged out, don't auto-login
+        sessionStorage.removeItem('loggedOut');
+        auth.signOut().catch(() => {}); // Sign out silently if needed
+        return;
+    }
+    
+    // Check if already logged in (only if not explicitly logged out)
     auth.onAuthStateChanged((user) => {
-        if (user) {
-            window.location.href = 'admin.html';
-            return;
+        if (user && !sessionStorage.getItem('loggedOut')) {
+            // Check if sessionStorage has admin data (additional check)
+            const adminEmail = sessionStorage.getItem('adminEmail');
+            if (adminEmail) {
+                window.location.href = 'admin.html';
+                return;
+            }
         }
     });
 
@@ -31,6 +44,9 @@ async function handleLogin(e) {
         const userCredential = await auth.signInWithEmailAndPassword(email, password);
         const user = userCredential.user;
 
+        // Clear loggedOut flag
+        sessionStorage.removeItem('loggedOut');
+
         // Log activity
         await logActivity('admin_login', `Admin logged in: ${email}`);
 
@@ -53,6 +69,10 @@ async function handleLogin(e) {
                     await createDefaultAdmin();
                     // Try login again
                     const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                    
+                    // Clear loggedOut flag
+                    sessionStorage.removeItem('loggedOut');
+                    
                     await logActivity('admin_login', `Admin logged in (first time): ${email}`);
                     sessionStorage.setItem('adminEmail', userCredential.user.email);
                     sessionStorage.setItem('adminUid', userCredential.user.uid);

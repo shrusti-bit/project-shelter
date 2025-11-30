@@ -369,7 +369,7 @@ async function handleDonationSubmit(e) {
 
     const donorName = document.getElementById('donor-name').value.trim();
     const donorEmail = document.getElementById('donor-email').value.trim();
-    const amount = parseFloat(document.getElementById('donation-amount').value);
+    const amount = Math.round(parseFloat(document.getElementById('donation-amount').value) * 100) / 100; // Round to 2 decimal places
     const isAnonymous = document.getElementById('is-anonymous').checked;
     const paymentConfirmed = document.getElementById('payment-confirmed').checked;
 
@@ -455,14 +455,14 @@ async function handleDonationSubmit(e) {
             throw new Error(`Item not found in database: ${currentItem.id}`);
         }
 
-        const currentDonated = itemData.donated || 0;
-        const newDonated = currentDonated + amount;
+        const currentDonated = Math.round((itemData.donated || 0) * 100) / 100; // Round to 2 decimal places
+        const newDonated = Math.round((currentDonated + amount) * 100) / 100; // Round to 2 decimal places
         const donors = itemData.donors || {};
         const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         donors[donorKey] = {
             name: donorName,
-            amount: amount,
+            amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
             isAnonymous: isAnonymous,
             donationId: donationId,
             createdAt: firebase.database.ServerValue.TIMESTAMP
