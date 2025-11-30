@@ -95,7 +95,7 @@ function loadItems() {
 
         // Listen for realtime updates - automatically updates UI when any item changes
         // This includes when donations are added (amount updates immediately)
-        itemsRef.on('value', (snapshot) => {
+        itemsRef.on('value', async (snapshot) => {
             console.log('🔄 Real-time update triggered!');
             const itemsData = snapshot.val();
             const items = itemsData ? Object.keys(itemsData).map(key => ({
@@ -104,12 +104,32 @@ function loadItems() {
             })) : [];
 
             console.log('📦 Items received:', items.length);
+            
+            // Load pending donations to check item status
+            try {
+                const donationsSnapshot = await database.ref('donations').once('value');
+                const donationsData = donationsSnapshot.val() || {};
+                const pendingDonations = Object.values(donationsData).filter(d => d.status === 'pending');
+                
+                // Add pending status to items
+                items.forEach(item => {
+                    const itemPendingDonations = pendingDonations.filter(d => d.itemId === item.id);
+                    item.hasPendingDonations = itemPendingDonations.length > 0;
+                });
+            } catch (err) {
+                console.warn('Could not load pending donations:', err);
+                items.forEach(item => {
+                    item.hasPendingDonations = false;
+                });
+            }
+            
             if (items.length > 0) {
                 console.log('📊 Sample item:', {
                     id: items[0].id,
                     name: items[0].name,
                     donated: items[0].donated,
-                    total: items[0].total
+                    total: items[0].total,
+                    hasPendingDonations: items[0].hasPendingDonations
                 });
             }
             console.log('🔄 Re-rendering items with updated data...');
@@ -146,12 +166,14 @@ function renderItems(items) {
         const donated = item.donated || 0;
         const total = item.total || 0;
         const isFunded = donated >= total;
+        const hasPendingDonations = item.hasPendingDonations || false;
+        const isFullyFunded = isFunded && !hasPendingDonations;
         
         if (currentFilter === 'available') {
             return !isFunded;
         }
         if (currentFilter === 'funded') {
-            return isFunded;
+            return isFullyFunded; // Only show truly funded items (no pending)
         }
         return true; // 'all' filter
     });
@@ -186,11 +208,26 @@ function createItemCard(item) {
     const donated = item.donated || 0;
     const total = item.total || 0;
     const isFunded = donated >= total;
+    const hasPendingDonations = item.hasPendingDonations || false;
     const remaining = Math.max(0, total - donated);
     const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0;
-    const status = isFunded ? 'funded' : 'available';
-    const statusBadge = isFunded ? '✅ Funded' : '🎯 Available';
-    const badgeClass = isFunded ? 'badge-funded' : 'badge-available';
+    
+    // Determine status: Only show "Funded" if fully funded AND no pending donations
+    // If fully funded but has pending donations, show "Awaiting Confirmation"
+    let status, statusBadge, badgeClass;
+    if (isFunded && !hasPendingDonations) {
+        status = 'funded';
+        statusBadge = '✅ Funded';
+        badgeClass = 'badge-funded';
+    } else if (isFunded && hasPendingDonations) {
+        status = 'awaiting';
+        statusBadge = '⏳ Awaiting Confirmation';
+        badgeClass = 'badge-awaiting';
+    } else {
+        status = 'available';
+        statusBadge = '🎯 Available';
+        badgeClass = 'badge-available';
+    }
 
     return `
         <div class="christmas-card rounded-lg p-6 transition ${isFunded ? 'opacity-90' : ''} card-container" style="min-width: 0; display: flex; flex-direction: column; height: 100%;">
@@ -229,6 +266,10 @@ function createItemCard(item) {
                 <button id="donate-btn-${item.id}" class="w-full btn-christmas py-3 px-4 rounded-lg font-bold text-lg mt-auto">
                     🎁 Donate Now
                 </button>
+            ` : hasPendingDonations ? `
+                <div class="w-full bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mt-auto text-center">
+                    <p class="text-sm text-yellow-800 font-medium">⏳ Awaiting admin verification</p>
+                </div>
             ` : ''}
         </div>
     `;
@@ -428,7 +469,9 @@ async function handleConfirmDonation(e) {
         const donorKey = database.ref('donors').push().key;
         donors[donorKey] = {
             name: donorName,
-            amount: amount
+            amount: amount,
+            donationId: donationId,
+            createdAt: new Date().toISOString()
         };
         
         // Update item with new donated amount and donor

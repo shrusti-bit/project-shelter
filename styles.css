@@ -683,7 +683,8 @@ body {
 
 /* Badge fixes to prevent overflow */
 .badge-available,
-.badge-funded {
+.badge-funded,
+.badge-awaiting {
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -997,6 +998,12 @@ body {
     background: linear-gradient(135deg, #1e90ff 0%, #4169e1 100%);
     color: white;
     box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+}
+
+.badge-awaiting {
+    background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+    color: white;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
 }
 
 /* Filter Buttons */

@@ -584,10 +584,10 @@ async function renderDonations(donations) {
                     <div class="flex-1">
                         <div class="flex justify-between items-start mb-2">
                             <div class="flex-1">
-                                <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName)}</h3>
-                                <p class="text-sm text-gray-600">${escapeHtml(donation.donorEmail)}</p>
+                                <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName || 'Unknown')}</h3>
+                                <p class="text-sm text-gray-600">📧 ${escapeHtml(donation.donorEmail || 'No email')}</p>
+                                ${donation.donorPhone ? `<p class="text-sm text-gray-600">📱 ${escapeHtml(donation.donorPhone)}</p>` : ''}
                                 <p class="text-sm text-gray-600 mt-1">Item: <span class="font-medium">${escapeHtml(itemName)}</span></p>
-                                ${donation.isAnonymous ? '<p class="text-xs text-orange-600 mt-1">🔒 Marked as Anonymous (Public display only)</p>' : ''}
                             </div>
                             ${statusBadge}
                         </div>
@@ -597,8 +597,6 @@ async function renderDonations(donations) {
                     <div class="flex justify-between">
                         <span>Amount:</span>
                         <span class="font-bold text-green-600">₹${formatCurrency(donation.amount)}</span>
-                    </div>
-                    <div class="flex justify-between">
                     </div>
                     <div class="flex justify-between">
                         <span>Submitted:</span>
@@ -753,12 +751,17 @@ async function handleDeleteSelectedDonations() {
 }
 
 async function verifyDonation(donationId) {
-    if (!confirm('Mark this donation as verified? (Note: Amount was already added when donation was submitted)')) {
+    if (!confirm('Mark this donation as verified? This will add the amount to the item.')) {
         return;
     }
 
     try {
         const user = auth.currentUser;
+        if (!user) {
+            alert('You must be logged in to verify donations');
+            return;
+        }
+
         const donationSnapshot = await database.ref(`donations/${donationId}`).once('value');
         const donation = donationSnapshot.val();
         
@@ -768,12 +771,11 @@ async function verifyDonation(donationId) {
         }
 
         if (donation.status === 'verified') {
-            alert('Donation is already verified');
+            alert('This donation is already verified');
             return;
         }
 
-        // Check if amount was already added (donations now update items immediately)
-        // If not added yet, add it now (for backward compatibility with old donations)
+        // Get item and add donation amount
         const itemRef = database.ref(`items/${donation.itemId}`);
         const itemSnapshot = await itemRef.once('value');
         const itemData = itemSnapshot.val();
@@ -783,10 +785,56 @@ async function verifyDonation(donationId) {
             return;
         }
 
-        // Check if this donation amount is already in the item's donated amount
-        // We'll check by looking at donors list or comparing amounts
-        // For now, we'll just mark as verified without double-counting
-        // The amount should already be added when donation was submitted
+        // Check if amount was already added (for backward compatibility)
+        const currentDonated = Math.round((itemData.donated || 0) * 100) / 100;
+        const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+        
+        // Check if this donation is already in the donors list
+        // Check by donationId first, then by name and amount (for backward compatibility)
+        let amountAlreadyAdded = false;
+        if (itemData.donors) {
+            // First check by donationId
+            let existingDonor = Object.values(itemData.donors).find(d => d.donationId === donationId);
+            
+            // If not found by donationId, check by name and amount (for old donations without donationId)
+            if (!existingDonor && donation.donorName && donationAmount) {
+                existingDonor = Object.values(itemData.donors).find(d => 
+                    d.name === donation.donorName && 
+                    Math.round((d.amount || 0) * 100) / 100 === donationAmount
+                );
+            }
+            
+            amountAlreadyAdded = !!existingDonor;
+        }
+        
+        // Add amount if not already added
+        if (!amountAlreadyAdded) {
+            const newDonated = Math.round((currentDonated + donationAmount) * 100) / 100;
+            const donors = itemData.donors || {};
+            const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            donors[donorKey] = {
+                name: donation.donorName,
+                amount: donationAmount,
+                donationId: donationId,
+                createdAt: donation.createdAt || firebase.database.ServerValue.TIMESTAMP
+            };
+            
+            const isFunded = newDonated >= (itemData.total || 0);
+            
+            await itemRef.update({
+                donated: newDonated,
+                donors: donors,
+                status: isFunded ? 'funded' : 'available',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            if (isFunded) {
+                await createNotification('item_funded', `Item fully funded: ${itemData.name}`, donation.itemId);
+            }
+        } else {
+            console.log('✅ Amount already added - skipping duplicate addition');
+        }
 
         // Update donation status to verified
         await database.ref(`donations/${donationId}`).update({
@@ -798,13 +846,7 @@ async function verifyDonation(donationId) {
         // Log activity
         await logActivity('donation_verified', `Verified donation: ₹${formatCurrency(donation.amount)} for ${itemData.name}`);
 
-        // Check if item is now fully funded (amount was already added on submission)
-        const isFunded = (itemData.donated || 0) >= (itemData.total || 0);
-        if (isFunded) {
-            await createNotification('item_funded', `Item fully funded: ${itemData.name}`, donation.itemId);
-        }
-
-        alert('Donation verified successfully!');
+        alert('Donation verified successfully! Amount has been added to the item.');
     } catch (error) {
         console.error('Error verifying donation:', error);
         alert('Failed to verify donation');
