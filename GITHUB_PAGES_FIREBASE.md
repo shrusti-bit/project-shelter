@@ -135,18 +135,26 @@ Make sure your Firebase Database Rules are set correctly:
 
 ## Updating Your Site
 
-To update your site:
+To update your site after making changes:
 
 ```bash
-# Make changes to your files
-# Then commit and push:
+# Navigate to your project folder
+cd C:\Users\Shrusti\Desktop\Web
 
-git add dist/
+# Add updated files
+git add dist/app.js dist/admin.js
+# Or add all files: git add dist/
+
+# Commit changes
 git commit -m "Update: description of changes"
+
+# Push to GitHub
 git push
 ```
 
-GitHub Pages will automatically update within 1-2 minutes.
+**✅ GitHub Pages will automatically update within 1-2 minutes!**
+
+Your live website will reflect the changes automatically - no manual deployment needed!
 
 ## Custom Domain (Optional)
 

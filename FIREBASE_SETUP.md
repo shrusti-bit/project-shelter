@@ -76,7 +76,27 @@ const firebaseConfig = {
       ".write": true
     },
     "donations": {
+      ".read": "auth != null",
+      ".write": true
+    },
+    "admin": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "settings": {
       ".read": true,
+      ".write": "auth != null"
+    },
+    "activity": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "analytics": {
+      ".read": true,
+      ".write": true
+    },
+    "notifications": {
+      ".read": "auth != null",
       ".write": true
     }
   }

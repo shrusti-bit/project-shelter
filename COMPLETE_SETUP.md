@@ -48,7 +48,7 @@ This guide covers everything you need to set up your donation website with all f
   "rules": {
     "items": {
       ".read": true,
-      ".write": "auth != null"
+      ".write": true
     },
     "donations": {
       ".read": "auth != null",

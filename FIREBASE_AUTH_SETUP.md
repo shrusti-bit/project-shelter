@@ -32,7 +32,7 @@ This guide will help you set up Firebase Authentication for secure admin login.
   "rules": {
     "items": {
       ".read": true,
-      ".write": "auth != null"
+      ".write": true
     },
     "donations": {
       ".read": "auth != null",
