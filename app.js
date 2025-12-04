@@ -105,21 +105,28 @@ function loadItems() {
 
             console.log('📦 Items received:', items.length);
             
-            // Load pending donations to check item status
+            // Load pending donations to check item status and calculate verified amounts
             try {
                 const donationsSnapshot = await database.ref('donations').once('value');
                 const donationsData = donationsSnapshot.val() || {};
                 const pendingDonations = Object.values(donationsData).filter(d => d.status === 'pending');
+                const verifiedDonations = Object.values(donationsData).filter(d => d.status === 'verified');
                 
-                // Add pending status to items
+                // Add pending status and calculate verified donated amount for items
                 items.forEach(item => {
                     const itemPendingDonations = pendingDonations.filter(d => d.itemId === item.id);
                     item.hasPendingDonations = itemPendingDonations.length > 0;
+                    
+                    // Calculate verified donated amount (total donated minus pending amounts)
+                    const pendingAmount = itemPendingDonations.reduce((sum, d) => sum + (d.amount || 0), 0);
+                    const totalDonated = item.donated || 0;
+                    item.verifiedDonated = Math.max(0, Math.round((totalDonated - pendingAmount) * 100) / 100);
                 });
             } catch (err) {
                 console.warn('Could not load pending donations:', err);
                 items.forEach(item => {
                     item.hasPendingDonations = false;
+                    item.verifiedDonated = item.donated || 0; // Fallback to donated if we can't calculate
                 });
             }
             
@@ -163,17 +170,20 @@ function renderItems(items) {
 
     // Filter items based on current filter
     const filteredItems = items.filter(item => {
+        const verifiedDonated = item.verifiedDonated !== undefined ? item.verifiedDonated : (item.donated || 0);
         const donated = item.donated || 0;
         const total = item.total || 0;
-        const isFunded = donated >= total;
+        const isFunded = verifiedDonated >= total; // Use verified amount for funding check
+        const isFullyFundedWithPending = donated >= total; // Total including pending
         const hasPendingDonations = item.hasPendingDonations || false;
         const isFullyFunded = isFunded && !hasPendingDonations;
+        const isPending = (isFullyFundedWithPending && verifiedDonated < total) || (isFunded && hasPendingDonations);
         
         if (currentFilter === 'available') {
-            return !isFunded;
+            return !isFunded && !isPending; // Show only items that can accept donations
         }
         if (currentFilter === 'funded') {
-            return isFullyFunded; // Only show truly funded items (no pending)
+            return isFullyFunded; // Only show truly funded items (verified and no pending)
         }
         return true; // 'all' filter
     });
@@ -194,7 +204,7 @@ function renderItems(items) {
     // Render only filtered items
     itemsGridEl.innerHTML = filteredItems.map(item => createItemCard(item)).join('');
 
-    // Add event listeners to donate buttons
+    // Add event listeners to donate buttons (only buttons that are rendered can accept donations)
     filteredItems.forEach(item => {
         const btn = document.getElementById(`donate-btn-${item.id}`);
         if (btn) {
@@ -205,28 +215,42 @@ function renderItems(items) {
 
 // Create item card HTML
 function createItemCard(item) {
-    const donated = item.donated || 0;
+    const donated = item.donated || 0; // Total donated (including pending)
+    const verifiedDonated = item.verifiedDonated !== undefined ? item.verifiedDonated : donated; // Only verified donations
     const total = item.total || 0;
-    const isFunded = donated >= total;
+    const isFunded = verifiedDonated >= total; // Use verified amount for funding check
     const hasPendingDonations = item.hasPendingDonations || false;
-    const remaining = Math.max(0, total - donated);
-    const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0;
+    const remaining = Math.max(0, total - verifiedDonated); // Remaining based on verified amount
+    const progressPercent = total > 0 ? Math.min(100, (verifiedDonated / total) * 100) : 0; // Progress based on verified amount
     
-    // Determine status: Only show "Funded" if fully funded AND no pending donations
-    // If fully funded but has pending donations, show "Awaiting Confirmation"
-    let status, statusBadge, badgeClass;
+    // Determine status: 
+    // - "Funded" only if fully funded with verified donations AND no pending donations
+    // - "Pending" if fully funded (including pending) but not fully verified
+    // - "Available" otherwise
+    const isFullyFundedWithPending = donated >= total; // Total including pending donations
+    let status, statusBadge, badgeClass, canDonate;
     if (isFunded && !hasPendingDonations) {
         status = 'funded';
         statusBadge = '✅ Funded';
         badgeClass = 'badge-funded';
-    } else if (isFunded && hasPendingDonations) {
-        status = 'awaiting';
-        statusBadge = '⏳ Awaiting Confirmation';
+        canDonate = false;
+    } else if (isFullyFundedWithPending && verifiedDonated < total) {
+        // Fully funded including pending, but not fully verified
+        status = 'pending';
+        statusBadge = '⏳ Pending';
         badgeClass = 'badge-awaiting';
+        canDonate = false;
+    } else if (isFunded && hasPendingDonations) {
+        // Verified amount reaches target but has pending donations
+        status = 'pending';
+        statusBadge = '⏳ Pending';
+        badgeClass = 'badge-awaiting';
+        canDonate = false;
     } else {
         status = 'available';
         statusBadge = '🎯 Available';
         badgeClass = 'badge-available';
+        canDonate = true;
     }
 
     return `
@@ -262,13 +286,18 @@ function createItemCard(item) {
             </div>
 
 
-            ${!isFunded ? `
+            ${canDonate ? `
                 <button id="donate-btn-${item.id}" class="w-full btn-christmas py-3 px-4 rounded-lg font-bold text-lg mt-auto">
                     🎁 Donate Now
                 </button>
-            ` : hasPendingDonations ? `
+            ` : isFullyFundedWithPending && verifiedDonated < total ? `
                 <div class="w-full bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mt-auto text-center">
-                    <p class="text-sm text-yellow-800 font-medium">⏳ Awaiting admin verification</p>
+                    <p class="text-sm text-yellow-800 font-medium">⏳ Pending admin verification</p>
+                    <p class="text-xs text-yellow-700 mt-1">Donations are disabled until verification is complete</p>
+                </div>
+            ` : isFunded && hasPendingDonations ? `
+                <div class="w-full bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mt-auto text-center">
+                    <p class="text-sm text-yellow-800 font-medium">⏳ Pending admin verification</p>
                 </div>
             ` : ''}
         </div>
@@ -282,7 +311,8 @@ function getDonorDisplay(item) {
     }
     
     const donors = Object.values(item.donors);
-    const isFullyFunded = (item.donated || 0) >= (item.total || 0);
+    const verifiedDonated = item.verifiedDonated !== undefined ? item.verifiedDonated : (item.donated || 0);
+    const isFullyFunded = verifiedDonated >= (item.total || 0);
     
     // Filter out anonymous donors and get names
     const namedDonors = donors.filter(d => !d.isAnonymous);
@@ -331,16 +361,20 @@ function openDonationModal(item) {
     const amountHint = document.getElementById('amount-hint');
     const formError = document.getElementById('form-error');
 
+    // Use verified donated amount for remaining calculation
+    const verifiedDonated = item.verifiedDonated !== undefined ? item.verifiedDonated : (item.donated || 0);
+    const remaining = Math.max(0, item.total - verifiedDonated);
+
     itemNameEl.textContent = `Donate to ${item.name}`;
-    amountInput.max = Math.max(0, item.total - (item.donated || 0));
-    amountHint.textContent = `Max: ₹${formatCurrency(amountInput.max)}`;
+    amountInput.max = remaining;
+    amountHint.textContent = `Max: ₹${formatCurrency(remaining)}`;
     formError.classList.add('hidden');
     
     // Update summary card
     const summaryItemName = document.getElementById('summary-item-name');
     const summaryRemaining = document.getElementById('summary-remaining');
     if (summaryItemName) summaryItemName.textContent = item.name;
-    if (summaryRemaining) summaryRemaining.textContent = `₹${formatCurrency(amountInput.max)}`;
+    if (summaryRemaining) summaryRemaining.textContent = `₹${formatCurrency(remaining)}`;
 
     // Reset form
     document.getElementById('donation-form').reset();
@@ -428,7 +462,9 @@ async function handleConfirmDonation(e) {
         return;
     }
 
-    const remaining = currentItem.total - (currentItem.donated || 0);
+    // Use verified donated amount for remaining calculation
+    const verifiedDonated = currentItem.verifiedDonated !== undefined ? currentItem.verifiedDonated : (currentItem.donated || 0);
+    const remaining = currentItem.total - verifiedDonated;
     if (amount > remaining) {
         showFormError(`Amount cannot exceed remaining amount of ₹${formatCurrency(remaining)}`);
         return;
