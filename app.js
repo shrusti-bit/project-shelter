@@ -719,6 +719,66 @@ function showPaymentInstructionsModal() {
     modal.classList.remove('hidden');
     console.log('✅ Modal should now be visible');
     
+    // Hide UPI button initially
+    const upiButton = document.getElementById('upi-app-button');
+    if (upiButton) {
+        upiButton.classList.add('hidden');
+    }
+    
+    // Mobile UPI auto-open functionality
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile && window.pendingDonation && window.pendingDonation.amount) {
+        const donationAmount = window.pendingDonation.amount;
+        const upiLink = `upi://pay?pa=qr.project@sib&pn=Project+Shelter&cu=INR&am=${donationAmount}`;
+        
+        console.log('📱 Mobile device detected, attempting to open UPI app...');
+        console.log('🔗 UPI Link:', upiLink);
+        
+        // Create a temporary anchor element to open UPI intent
+        const tempLink = document.createElement('a');
+        tempLink.href = upiLink;
+        tempLink.style.display = 'none';
+        document.body.appendChild(tempLink);
+        
+        // Try to open UPI app
+        try {
+            tempLink.click();
+            console.log('✅ UPI intent triggered');
+        } catch (error) {
+            console.warn('⚠️ Error opening UPI app:', error);
+        }
+        
+        // Clean up temporary element
+        setTimeout(() => {
+            document.body.removeChild(tempLink);
+        }, 100);
+        
+        // Fallback: Show button after 2.5 seconds if UPI app didn't open
+        setTimeout(() => {
+            if (upiButton) {
+                upiButton.classList.remove('hidden');
+                console.log('📱 Showing UPI fallback button');
+                
+                // Add click handler to UPI button
+                upiButton.onclick = function(e) {
+                    e.preventDefault();
+                    const fallbackLink = document.createElement('a');
+                    fallbackLink.href = upiLink;
+                    fallbackLink.style.display = 'none';
+                    document.body.appendChild(fallbackLink);
+                    try {
+                        fallbackLink.click();
+                    } catch (error) {
+                        console.warn('⚠️ Error opening UPI app from button:', error);
+                    }
+                    setTimeout(() => {
+                        document.body.removeChild(fallbackLink);
+                    }, 100);
+                };
+            }
+        }, 2500);
+    }
+    
     // Also allow clicking outside to close (remove old listeners first)
     const oldHandler = modal._closeHandler;
     if (oldHandler) {
