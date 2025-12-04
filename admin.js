@@ -641,7 +641,13 @@ async function renderDonations(donations) {
                             ❌ Reject
                         </button>
                     </div>
-                ` : ''}
+                ` : `
+                    <div class="mt-3 flex gap-2">
+                        <button onclick="rejectDonation('${donation.id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm cursor-pointer">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                `}
             </div>
         `;
     }).join('');
