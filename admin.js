@@ -728,22 +728,23 @@ async function handleDeleteSelectedDonations() {
                     const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
                     const newDonated = Math.max(0, Math.round((currentDonated - donationAmount) * 100) / 100);
                     
-                    await itemRef.update({
-                        donated: newDonated,
-                        status: newDonated >= item.total ? 'funded' : 'available',
-                        updatedAt: firebase.database.ServerValue.TIMESTAMP
-                    });
-                    
                     // Remove donor from item's donors list
+                    let updatedDonors = {};
                     if (item.donors) {
-                        const updatedDonors = {};
                         Object.keys(item.donors).forEach(key => {
                             if (item.donors[key].donationId !== donationId) {
                                 updatedDonors[key] = item.donors[key];
                             }
                         });
-                        await itemRef.update({ donors: updatedDonors });
                     }
+                    
+                    // Update item with new donated amount, donors list, and status in one operation
+                    await itemRef.update({
+                        donated: newDonated,
+                        donors: updatedDonors,
+                        status: newDonated >= (item.total || 0) ? 'funded' : 'available',
+                        updatedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
                 }
             }
             
@@ -884,26 +885,102 @@ async function rejectDonation(donationId) {
             return;
         }
 
-        // Remove donation amount from item if it was already added
-        if (donation.status === 'verified') {
-            const itemRef = database.ref(`items/${donation.itemId}`);
-            const itemSnapshot = await itemRef.once('value');
-            const item = itemSnapshot.val();
+        // Get item and remove donation amount and donor
+        const itemRef = database.ref(`items/${donation.itemId}`);
+        const itemSnapshot = await itemRef.once('value');
+        const item = itemSnapshot.val();
+        
+        if (item) {
+            const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+            const currentDonated = Math.round((item.donated || 0) * 100) / 100;
             
-            if (item) {
-                const newDonated = Math.max(0, (item.donated || 0) - donation.amount);
-                await itemRef.update({
-                    donated: newDonated,
-                    status: newDonated >= item.total ? 'funded' : 'available'
+            // Remove donation amount from item (donations are added immediately when submitted)
+            const newDonated = Math.max(0, Math.round((currentDonated - donationAmount) * 100) / 100);
+            
+            // Remove donor from item's donors list
+            // Match by donationId first, then by name and amount as fallback
+            let updatedDonors = {};
+            let donorRemovedByDonationId = false;
+            
+            if (item.donors) {
+                // First pass: Remove donors that match by donationId
+                Object.keys(item.donors).forEach(key => {
+                    const donor = item.donors[key];
+                    if (donor.donationId && donor.donationId === donationId) {
+                        donorRemovedByDonationId = true;
+                        console.log('✅ Removed donor by donationId:', donationId, 'Donor name:', donor.name);
+                    } else {
+                        updatedDonors[key] = donor;
+                    }
                 });
+                
+                // If no match by donationId, try matching by name and amount
+                if (!donorRemovedByDonationId && donation.donorName && donationAmount) {
+                    updatedDonors = {};
+                    let foundMatch = false;
+                    
+                    Object.keys(item.donors).forEach(key => {
+                        const donor = item.donors[key];
+                        const donorAmount = Math.round((donor.amount || 0) * 100) / 100;
+                        
+                        // Check if this donor matches by name and amount
+                        if (donor.name === donation.donorName && donorAmount === donationAmount) {
+                            // Count how many donors match this name/amount
+                            const matchingCount = Object.values(item.donors).filter(d => 
+                                d.name === donation.donorName && 
+                                Math.round((d.amount || 0) * 100) / 100 === donationAmount
+                            ).length;
+                            
+                            // If only one match, remove it
+                            if (matchingCount === 1 && !foundMatch) {
+                                foundMatch = true;
+                                console.log('✅ Removed donor by name and amount match:', donor.name);
+                                // Don't add this donor to updatedDonors
+                            } else {
+                                updatedDonors[key] = donor;
+                            }
+                        } else {
+                            updatedDonors[key] = donor;
+                        }
+                    });
+                }
             }
+            
+            const donorsBeforeCount = item.donors ? Object.keys(item.donors).length : 0;
+            const donorsAfterCount = Object.keys(updatedDonors).length;
+            const donorWasRemoved = donorsBeforeCount > donorsAfterCount;
+            
+            console.log('📊 Donor removal:', {
+                donationId: donationId,
+                donorName: donation.donorName,
+                donationAmount: donationAmount,
+                donorsBefore: donorsBeforeCount,
+                donorsAfter: donorsAfterCount,
+                donorRemoved: donorWasRemoved,
+                removedByDonationId: donorRemovedByDonationId
+            });
+            
+            // Update item with new donated amount, donors list, and status
+            // This will trigger real-time listeners on:
+            // 1. Admin panel "All Items" view (itemsRef.on('value'))
+            // 2. Main website items display (itemsRef.on('value'))
+            await itemRef.update({
+                donated: newDonated,
+                donors: updatedDonors,
+                status: newDonated >= (item.total || 0) ? 'funded' : 'available',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            console.log('✅ Item updated after rejection - real-time listeners will update UI automatically');
         }
 
-        // Delete donation
+        // Delete donation - this will trigger real-time listener on "All Donations" view
         await database.ref(`donations/${donationId}`).remove();
-        await logActivity('donation_rejected', `Rejected donation: ₹${formatCurrency(donation.amount)}`);
+        console.log('✅ Donation deleted - real-time listener will update "All Donations" view automatically');
+        
+        await logActivity('donation_rejected', `Rejected donation: ₹${formatCurrency(donation.amount)} for ${item ? item.name : 'item'}`);
 
-        alert('Donation rejected and removed');
+        alert('Donation rejected and removed. Donor has been removed from the item.\n\nAll views will update automatically via real-time listeners.');
     } catch (error) {
         console.error('Error rejecting donation:', error);
         alert('Failed to reject donation');
