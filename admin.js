@@ -1,0 +1,1215 @@
+// Admin Dashboard JavaScript with Firebase Auth and Enhanced Features
+
+let itemsRef = null;
+let donationsRef = null;
+let currentDonationFilter = 'all';
+let currentTab = 'dashboard';
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Check Firebase Auth
+    auth.onAuthStateChanged((user) => {
+        // Check if user was explicitly logged out
+        const wasLoggedOut = sessionStorage.getItem('loggedOut');
+        if (!user || wasLoggedOut === 'true') {
+            sessionStorage.removeItem('loggedOut');
+            window.location.href = 'admin-login.html';
+            return;
+        }
+        
+        // Verify sessionStorage has admin data
+        const adminEmail = sessionStorage.getItem('adminEmail');
+        if (!adminEmail) {
+            // No session data, redirect to login
+            window.location.href = 'admin-login.html';
+            return;
+        }
+
+        // User is logged in
+        document.getElementById('admin-username').textContent = user.email || 'Admin';
+        
+        // Initialize dashboard
+        initializeDashboard();
+    });
+});
+
+function initializeDashboard() {
+    // Setup event listeners
+    setupEventListeners();
+    setupTabs();
+    
+    // Load data
+    loadItems();
+    loadDonations();
+    updateStatistics();
+    loadSettings();
+    loadActivityLog();
+    loadAnalytics();
+    loadNotifications();
+    
+    // Update notifications badge periodically
+    setInterval(updateNotificationsBadge, 30000); // Every 30 seconds
+}
+
+// Track selected donations
+let selectedDonations = new Set();
+
+function setupEventListeners() {
+    document.getElementById('add-item-form').addEventListener('submit', handleAddItem);
+    document.getElementById('edit-item-form').addEventListener('submit', handleUpdateItem);
+    document.getElementById('settings-form').addEventListener('submit', handleSaveSettings);
+    
+    // Donation filters
+    document.getElementById('filter-pending').addEventListener('click', () => setDonationFilter('pending'));
+    document.getElementById('filter-verified').addEventListener('click', () => setDonationFilter('verified'));
+    document.getElementById('filter-all-donations').addEventListener('click', () => setDonationFilter('all'));
+    
+    // Bulk actions
+    document.getElementById('select-all-donations').addEventListener('change', handleSelectAllDonations);
+    document.getElementById('delete-selected-donations').addEventListener('click', handleDeleteSelectedDonations);
+    
+    // Logout
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+}
+
+function setupTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+}
+
+function switchTab(tabName) {
+    currentTab = tabName;
+    
+    // Update button states
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active', 'text-red-600', 'border-red-600');
+        btn.classList.add('text-gray-600');
+    });
+    
+    const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+    if (activeBtn) {
+        activeBtn.classList.add('active', 'text-red-600', 'border-red-600');
+        activeBtn.classList.remove('text-gray-600');
+    }
+    
+    // Show/hide tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+    
+    const activeContent = document.getElementById(`tab-${tabName}`);
+    if (activeContent) {
+        activeContent.classList.remove('hidden');
+    }
+    
+    // Load data for specific tabs
+    if (tabName === 'activity') {
+        loadActivityLog();
+    } else if (tabName === 'analytics') {
+        loadAnalytics();
+    } else if (tabName === 'notifications') {
+        loadNotifications();
+    }
+}
+
+async function handleLogout() {
+    try {
+        // Mark as logged out in sessionStorage
+        sessionStorage.setItem('loggedOut', 'true');
+        
+        // Clear sessionStorage
+        sessionStorage.removeItem('adminEmail');
+        sessionStorage.removeItem('adminUid');
+        
+        // Sign out from Firebase Auth
+        await auth.signOut();
+        
+        // Log activity
+        await logActivity('admin_logout', 'Admin logged out');
+        
+        // Redirect to login page
+        window.location.href = 'admin-login.html';
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Clear sessionStorage even if signOut fails
+        sessionStorage.setItem('loggedOut', 'true');
+        sessionStorage.removeItem('adminEmail');
+        sessionStorage.removeItem('adminUid');
+        window.location.href = 'admin-login.html';
+    }
+}
+
+function setDonationFilter(filter) {
+    currentDonationFilter = filter;
+    
+    // Clear selection when filter changes
+    selectedDonations.clear();
+    updateBulkActionsVisibility();
+    
+    // Update button states
+    document.querySelectorAll('#donations-list').parentElement.querySelectorAll('button').forEach(btn => {
+        btn.classList.remove('opacity-100', 'ring-2', 'ring-offset-2');
+    });
+    
+    const activeBtn = document.getElementById(`filter-${filter === 'all' ? 'all-donations' : filter}`);
+    if (activeBtn) {
+        activeBtn.classList.add('opacity-100', 'ring-2', 'ring-offset-2');
+    }
+    
+    loadDonations();
+}
+
+async function handleAddItem(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('item-name').value.trim();
+    const description = document.getElementById('item-description').value.trim();
+    const total = Math.round(parseFloat(document.getElementById('item-total').value) * 100) / 100; // Round to 2 decimal places
+
+    if (!name || !total || total < 1) {
+        alert('Please fill in all required fields correctly');
+        return;
+    }
+
+    try {
+        const itemRef = database.ref('items').push();
+        await itemRef.set({
+            name: name,
+            description: description || '',
+            total: total,
+            donated: 0,
+            status: 'available',
+            donors: {},
+            createdAt: firebase.database.ServerValue.TIMESTAMP
+        });
+
+        // Log activity
+        await logActivity('item_added', `Added item: ${name} (₹${formatCurrency(total)})`);
+
+        // Create notification
+        await createNotification('item_added', `New item added: ${name}`, itemRef.key);
+
+        // Reset form
+        document.getElementById('add-item-form').reset();
+        alert('Item added successfully!');
+    } catch (error) {
+        console.error('Error adding item:', error);
+        alert('Failed to add item. Please try again.');
+    }
+}
+
+function loadItems() {
+    itemsRef = database.ref('items');
+    
+    itemsRef.on('value', (snapshot) => {
+        const itemsData = snapshot.val();
+        const items = itemsData ? Object.keys(itemsData).map(key => ({
+            id: key,
+            ...itemsData[key]
+        })) : [];
+
+        renderItems(items);
+        updateStatistics();
+    });
+}
+
+function renderItems(items) {
+    const container = document.getElementById('admin-items-list');
+    
+    if (items.length === 0) {
+        container.innerHTML = '<p class="text-gray-600">No items yet. Add your first item above!</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => {
+        const donated = item.donated || 0;
+        const total = item.total || 0;
+        const isFunded = donated >= total;
+        const remaining = Math.max(0, total - donated);
+        const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0;
+
+        return `
+            <div class="border-2 border-red-200 rounded-lg p-4">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex-1">
+                        <h3 class="text-xl font-bold text-gray-900">${escapeHtml(item.name)}</h3>
+                        ${item.description ? `<p class="text-sm text-gray-600 mt-1">${escapeHtml(item.description)}</p>` : ''}
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-sm font-medium ${isFunded ? 'badge-funded' : 'badge-available'}">
+                        ${isFunded ? '✅ Funded' : '🎯 Available'}
+                    </span>
+                </div>
+                <div class="mt-3 space-y-1">
+                    <div class="flex justify-between text-sm">
+                        <span>Total:</span>
+                        <span class="font-bold">₹${formatCurrency(total)}</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span>Donated:</span>
+                        <span class="font-bold text-green-600">₹${formatCurrency(donated)}</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span>Remaining:</span>
+                        <span class="font-bold text-blue-600">₹${formatCurrency(remaining)}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div class="progress-christmas h-2 rounded-full" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+                
+                ${item.donors && Object.keys(item.donors).length > 0 ? `
+                    <div class="mt-4 border-t-2 border-gray-200 pt-3">
+                        <h4 class="font-bold text-gray-900 mb-2 text-sm">📋 Donor Details:</h4>
+                        <div class="space-y-2 max-h-48 overflow-y-auto">
+                            ${Object.values(item.donors).map(donor => {
+                                const donorDate = donor.createdAt ? formatDate(donor.createdAt) : 'Unknown date';
+                                return `
+                                    <div class="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex-1">
+                                                <div class="font-semibold text-gray-900">${escapeHtml(donor.name)}</div>
+                                                <div class="text-gray-600 mt-1">
+                                                    <span class="font-medium">Amount:</span> ₹${formatCurrency(donor.amount)}
+                                                </div>
+                                                <div class="text-gray-500 mt-1">
+                                                    <span class="font-medium">Date:</span> ${donorDate}
+                                                </div>
+                                                ${donor.isAnonymous ? '<div class="text-orange-600 mt-1 text-xs">🔒 Marked as Anonymous (Public)</div>' : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <div class="mt-3 flex gap-2">
+                    <button onclick="editItem('${item.id}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer flex-1">
+                        ✏️ Edit Item
+                    </button>
+                    <button onclick="deleteItem('${item.id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm cursor-pointer">
+                        🗑️ Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Store current item donors for editing
+let currentItemDonors = {};
+
+async function editItem(itemId) {
+    try {
+        const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
+        const item = itemSnapshot.val();
+        
+        if (!item) {
+            alert('Item not found');
+            return;
+        }
+
+        // Populate form
+        document.getElementById('edit-item-id').value = itemId;
+        document.getElementById('edit-item-name').value = item.name || '';
+        document.getElementById('edit-item-description').value = item.description || '';
+        document.getElementById('edit-item-total').value = item.total || 0;
+        document.getElementById('edit-item-status').value = item.status || 'available';
+
+        // Load and display donors
+        currentItemDonors = item.donors || {};
+        renderDonorsList();
+        updateTotalDonated();
+
+        // Show modal
+        document.getElementById('edit-item-modal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Error loading item for edit:', error);
+        alert('Failed to load item details');
+    }
+}
+
+function closeEditModal() {
+    document.getElementById('edit-item-modal').classList.add('hidden');
+    document.getElementById('edit-item-form').reset();
+    currentItemDonors = {};
+    document.getElementById('donors-list-container').innerHTML = '<p class="text-xs text-gray-500 text-center py-2">No donors yet. Click "Add Donor" to add one.</p>';
+}
+
+function renderDonorsList() {
+    const container = document.getElementById('donors-list-container');
+    const donors = Object.entries(currentItemDonors);
+    
+    if (donors.length === 0) {
+        container.innerHTML = '<p class="text-xs text-gray-500 text-center py-2">No donors yet. Click "Add Donor" to add one.</p>';
+        return;
+    }
+    
+    container.innerHTML = donors.map(([donorKey, donor]) => {
+        const donorDate = donor.createdAt ? formatDate(donor.createdAt) : 'Unknown date';
+        return `
+            <div class="bg-gray-50 border border-gray-200 rounded p-3 donor-item" data-donor-key="${donorKey}">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex-1">
+                        <div class="font-semibold text-gray-900 text-sm">${escapeHtml(donor.name)}</div>
+                        <div class="text-xs text-gray-500 mt-1">${donorDate}</div>
+                        ${donor.isAnonymous ? '<div class="text-xs text-orange-600 mt-1">🔒 Anonymous (Public)</div>' : ''}
+                    </div>
+                    <button onclick="removeDonor('${donorKey}')" class="ml-2 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition" title="Remove Donor">
+                        🗑️
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-xs text-gray-600">Amount (₹):</label>
+                    <input type="number" 
+                           step="0.01" 
+                           min="0" 
+                           value="${donor.amount || 0}" 
+                           onchange="updateDonorAmount('${donorKey}', this.value)"
+                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateDonorAmount(donorKey, newAmount) {
+    const amount = Math.round(parseFloat(newAmount) * 100) / 100; // Round to 2 decimal places
+    if (isNaN(amount) || amount < 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+    
+    if (currentItemDonors[donorKey]) {
+        currentItemDonors[donorKey].amount = amount;
+        updateTotalDonated();
+    }
+}
+
+function removeDonor(donorKey) {
+    if (!confirm('Are you sure you want to remove this donor?')) {
+        return;
+    }
+    
+    delete currentItemDonors[donorKey];
+    renderDonorsList();
+    updateTotalDonated();
+}
+
+function addNewDonor() {
+    const name = prompt('Enter donor name:');
+    if (!name || !name.trim()) {
+        return;
+    }
+    
+    const amountStr = prompt('Enter donation amount (₹):');
+    const amount = Math.round(parseFloat(amountStr) * 100) / 100; // Round to 2 decimal places
+    if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+    
+    const isAnonymous = confirm('Mark as anonymous for public display?');
+    
+    const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    currentItemDonors[donorKey] = {
+        name: name.trim(),
+        amount: amount,
+        isAnonymous: isAnonymous,
+        createdAt: Date.now()
+    };
+    
+    renderDonorsList();
+    updateTotalDonated();
+}
+
+function updateTotalDonated() {
+    const total = Math.round(Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0) * 100) / 100; // Round to 2 decimal places
+    document.getElementById('edit-total-donated').textContent = `₹${formatCurrency(total)}`;
+}
+
+async function handleUpdateItem(e) {
+    e.preventDefault();
+
+    const itemId = document.getElementById('edit-item-id').value;
+    const name = document.getElementById('edit-item-name').value.trim();
+    const description = document.getElementById('edit-item-description').value.trim();
+    const total = Math.round(parseFloat(document.getElementById('edit-item-total').value) * 100) / 100; // Round to 2 decimal places
+    const status = document.getElementById('edit-item-status').value;
+
+    if (!name || !total || total < 1) {
+        alert('Please fill in all required fields correctly');
+        return;
+    }
+
+    // Calculate total donated from individual donors
+    const donated = Math.round(Object.values(currentItemDonors).reduce((sum, donor) => sum + (donor.amount || 0), 0) * 100) / 100; // Round to 2 decimal places
+
+    if (donated > total) {
+        if (!confirm(`Donated amount (₹${formatCurrency(donated)}) is greater than total (₹${formatCurrency(total)}). Continue anyway?`)) {
+            return;
+        }
+    }
+
+    try {
+        // Get current item to track changes
+        const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
+        const oldItem = itemSnapshot.val();
+        
+        if (!oldItem) {
+            alert('Item not found');
+            return;
+        }
+
+        // Determine status based on amounts
+        const finalStatus = donated >= total ? 'funded' : status;
+
+        // Prepare update data
+        const updateData = {
+            name: name,
+            description: description || '',
+            total: total,
+            donated: donated,
+            donors: currentItemDonors, // Save all individual donors
+            status: finalStatus,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP
+        };
+
+        // Update item
+        await database.ref(`items/${itemId}`).update(updateData);
+
+        // If item name changed, update all related donations
+        if (oldItem.name !== name) {
+            try {
+                const donationsSnapshot = await database.ref('donations').once('value');
+                const donationsData = donationsSnapshot.val() || {};
+                const relatedDonations = Object.keys(donationsData).filter(donationId => 
+                    donationsData[donationId].itemId === itemId
+                );
+                
+                // Update each related donation (donations store itemId, so they'll automatically show new name when rendered)
+                // We don't need to update donations since they reference by itemId, not name
+                console.log(`✅ Item name changed - ${relatedDonations.length} related donations will show new name automatically`);
+            } catch (err) {
+                console.warn('Could not check related donations:', err);
+            }
+        }
+
+        // Log activity with change details
+        const changes = [];
+        if (oldItem.name !== name) changes.push(`name: "${oldItem.name}" → "${name}"`);
+        if (oldItem.total !== total) changes.push(`total: ₹${formatCurrency(oldItem.total)} → ₹${formatCurrency(total)}`);
+        if (oldItem.donated !== donated) changes.push(`donated: ₹${formatCurrency(oldItem.donated)} → ₹${formatCurrency(donated)}`);
+        if (oldItem.status !== finalStatus) changes.push(`status: "${oldItem.status}" → "${finalStatus}"`);
+        const donorCount = Object.keys(currentItemDonors).length;
+        changes.push(`donors: ${donorCount} donor(s)`);
+
+        await logActivity('item_updated', `Updated item: ${name}. Changes: ${changes.join(', ')}`);
+
+        // Create notification if item is now fully funded
+        if (oldItem.donated < oldItem.total && donated >= total) {
+            await createNotification('item_funded', `Item fully funded: ${name}`, itemId);
+        }
+
+        // Close modal
+        closeEditModal();
+        alert('Item updated successfully! Changes will reflect in all related donations.');
+    } catch (error) {
+        console.error('Error updating item:', error);
+        alert('Failed to update item. Please try again.');
+    }
+}
+
+async function deleteItem(itemId) {
+    if (!confirm('Are you sure you want to delete this item?')) {
+        return;
+    }
+
+    try {
+        const itemSnapshot = await database.ref(`items/${itemId}`).once('value');
+        const item = itemSnapshot.val();
+        
+        await database.ref(`items/${itemId}`).remove();
+        await logActivity('item_deleted', `Deleted item: ${item ? item.name : itemId}`);
+        alert('Item deleted successfully');
+    } catch (error) {
+        console.error('Error deleting item:', error);
+        alert('Failed to delete item');
+    }
+}
+
+function loadDonations() {
+    donationsRef = database.ref('donations');
+    
+    donationsRef.on('value', (snapshot) => {
+        const donationsData = snapshot.val();
+        const donations = donationsData ? Object.keys(donationsData).map(key => ({
+            id: key,
+            ...donationsData[key]
+        })) : [];
+
+        // Sort by date (newest first)
+        donations.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        
+        renderDonations(donations);
+        updateStatistics();
+    });
+}
+
+async function renderDonations(donations) {
+    const container = document.getElementById('donations-list');
+    
+    // Filter donations
+    let filteredDonations = donations;
+    if (currentDonationFilter === 'pending') {
+        filteredDonations = donations.filter(d => d.status === 'pending');
+    } else if (currentDonationFilter === 'verified') {
+        filteredDonations = donations.filter(d => d.status === 'verified');
+    }
+    
+    if (filteredDonations.length === 0) {
+        container.innerHTML = '<p class="text-gray-600">No donations found.</p>';
+        return;
+    }
+
+    // Get item names for display
+    const itemsSnapshot = await database.ref('items').once('value');
+    const itemsData = itemsSnapshot.val() || {};
+    
+    container.innerHTML = filteredDonations.map(donation => {
+        const item = itemsData[donation.itemId];
+        const itemName = item ? item.name : 'Unknown Item';
+        const date = donation.createdAt ? formatDate(donation.createdAt) : 'Unknown date';
+        const statusBadge = donation.status === 'verified' 
+            ? '<span class="px-2 py-1 bg-green-500 text-white rounded text-xs">✅ Verified</span>'
+            : '<span class="px-2 py-1 bg-yellow-500 text-white rounded text-xs">⏳ Pending</span>';
+        const isSelected = selectedDonations.has(donation.id);
+
+        return `
+            <div class="border-2 ${isSelected ? 'border-red-500 bg-red-50' : 'border-red-200'} rounded-lg p-4">
+                <div class="flex items-start gap-3 mb-2">
+                    <input type="checkbox" 
+                           class="donation-checkbox w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 mt-1" 
+                           data-donation-id="${donation.id}"
+                           ${isSelected ? 'checked' : ''}
+                           onchange="handleDonationSelection('${donation.id}', this.checked)">
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex-1">
+                                <h3 class="font-bold text-gray-900">${escapeHtml(donation.donorName || 'Unknown')}</h3>
+                                <p class="text-sm text-gray-600">📧 ${escapeHtml(donation.donorEmail || 'No email')}</p>
+                                ${donation.donorPhone ? `<p class="text-sm text-gray-600">📱 ${escapeHtml(donation.donorPhone)}</p>` : ''}
+                                <p class="text-sm text-gray-600 mt-1">Item: <span class="font-medium">${escapeHtml(itemName)}</span></p>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-2 space-y-1 text-sm">
+                    <div class="flex justify-between">
+                        <span>Amount:</span>
+                        <span class="font-bold text-green-600">₹${formatCurrency(donation.amount)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Submitted:</span>
+                        <span class="text-gray-600">${date}</span>
+                    </div>
+                    ${donation.verifiedAt ? `
+                        <div class="flex justify-between">
+                            <span>Verified:</span>
+                            <span class="text-gray-600">${formatDate(donation.verifiedAt)}</span>
+                        </div>
+                        ${donation.verifiedBy ? `
+                            <div class="flex justify-between">
+                                <span>Verified By:</span>
+                                <span class="text-gray-600">${escapeHtml(donation.verifiedBy)}</span>
+                            </div>
+                        ` : ''}
+                    ` : ''}
+                </div>
+                ${donation.status === 'pending' ? `
+                    <div class="mt-3 flex gap-2">
+                        <button onclick="verifyDonation('${donation.id}')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm cursor-pointer">
+                            ✅ Verify Payment
+                        </button>
+                        <button onclick="rejectDonation('${donation.id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm cursor-pointer">
+                            ❌ Reject
+                        </button>
+                    </div>
+                ` : `
+                    <div class="mt-3 flex gap-2">
+                        <button onclick="rejectDonation('${donation.id}')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm cursor-pointer">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                `}
+            </div>
+        `;
+    }).join('');
+    
+    // Update bulk actions visibility
+    updateBulkActionsVisibility();
+}
+
+// Handle individual donation selection
+function handleDonationSelection(donationId, isChecked) {
+    if (isChecked) {
+        selectedDonations.add(donationId);
+    } else {
+        selectedDonations.delete(donationId);
+    }
+    updateBulkActionsVisibility();
+}
+
+// Handle select all donations
+function handleSelectAllDonations(e) {
+    const isChecked = e.target.checked;
+    const checkboxes = document.querySelectorAll('.donation-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = isChecked;
+        const donationId = checkbox.getAttribute('data-donation-id');
+        if (isChecked) {
+            selectedDonations.add(donationId);
+        } else {
+            selectedDonations.delete(donationId);
+        }
+    });
+    
+    updateBulkActionsVisibility();
+}
+
+// Update bulk actions visibility and count
+function updateBulkActionsVisibility() {
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+    const selectAllCheckbox = document.getElementById('select-all-donations');
+    
+    if (selectedDonations.size > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = selectedDonations.size;
+        
+        // Update select all checkbox state
+        const checkboxes = document.querySelectorAll('.donation-checkbox');
+        const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+        if (selectAllCheckbox) selectAllCheckbox.checked = allChecked;
+    } else {
+        bulkActions.classList.add('hidden');
+        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+    }
+}
+
+// Delete selected donations
+async function handleDeleteSelectedDonations() {
+    if (selectedDonations.size === 0) {
+        alert('No donations selected');
+        return;
+    }
+    
+    const count = selectedDonations.size;
+    if (!confirm(`Are you sure you want to delete ${count} donation(s)? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const donationsToDelete = Array.from(selectedDonations);
+        const deletePromises = donationsToDelete.map(async (donationId) => {
+            // Get donation data first
+            const donationSnapshot = await database.ref(`donations/${donationId}`).once('value');
+            const donation = donationSnapshot.val();
+            
+            if (donation) {
+                // Remove donation amount from item if it was already added
+                const itemRef = database.ref(`items/${donation.itemId}`);
+                const itemSnapshot = await itemRef.once('value');
+                const item = itemSnapshot.val();
+                
+                if (item) {
+                    const currentDonated = Math.round((item.donated || 0) * 100) / 100;
+                    const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+                    const newDonated = Math.max(0, Math.round((currentDonated - donationAmount) * 100) / 100);
+                    
+                    // Remove donor from item's donors list
+                    let updatedDonors = {};
+                    if (item.donors) {
+                        Object.keys(item.donors).forEach(key => {
+                            if (item.donors[key].donationId !== donationId) {
+                                updatedDonors[key] = item.donors[key];
+                            }
+                        });
+                    }
+                    
+                    // Update item with new donated amount, donors list, and status in one operation
+                    await itemRef.update({
+                        donated: newDonated,
+                        donors: updatedDonors,
+                        status: newDonated >= (item.total || 0) ? 'funded' : 'available',
+                        updatedAt: firebase.database.ServerValue.TIMESTAMP
+                    });
+                }
+            }
+            
+            // Delete donation
+            await database.ref(`donations/${donationId}`).remove();
+        });
+        
+        await Promise.all(deletePromises);
+        
+        // Log activity
+        await logActivity('donations_deleted', `Deleted ${count} donation(s)`);
+        
+        // Clear selection
+        selectedDonations.clear();
+        updateBulkActionsVisibility();
+        
+        alert(`Successfully deleted ${count} donation(s)`);
+    } catch (error) {
+        console.error('Error deleting donations:', error);
+        alert('Failed to delete some donations. Please try again.');
+    }
+}
+
+async function verifyDonation(donationId) {
+    if (!confirm('Mark this donation as verified? This will add the amount to the item.')) {
+        return;
+    }
+
+    try {
+        const user = auth.currentUser;
+        if (!user) {
+            alert('You must be logged in to verify donations');
+            return;
+        }
+
+        const donationSnapshot = await database.ref(`donations/${donationId}`).once('value');
+        const donation = donationSnapshot.val();
+        
+        if (!donation) {
+            alert('Donation not found');
+            return;
+        }
+
+        if (donation.status === 'verified') {
+            alert('This donation is already verified');
+            return;
+        }
+
+        // Get item and add donation amount
+        const itemRef = database.ref(`items/${donation.itemId}`);
+        const itemSnapshot = await itemRef.once('value');
+        const itemData = itemSnapshot.val();
+
+        if (!itemData) {
+            alert('Item not found');
+            return;
+        }
+
+        // Check if amount was already added (for backward compatibility)
+        const currentDonated = Math.round((itemData.donated || 0) * 100) / 100;
+        const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+        
+        // Check if this donation is already in the donors list
+        // Check by donationId first, then by name and amount (for backward compatibility)
+        let amountAlreadyAdded = false;
+        if (itemData.donors) {
+            // First check by donationId
+            let existingDonor = Object.values(itemData.donors).find(d => d.donationId === donationId);
+            
+            // If not found by donationId, check by name and amount (for old donations without donationId)
+            if (!existingDonor && donation.donorName && donationAmount) {
+                existingDonor = Object.values(itemData.donors).find(d => 
+                    d.name === donation.donorName && 
+                    Math.round((d.amount || 0) * 100) / 100 === donationAmount
+                );
+            }
+            
+            amountAlreadyAdded = !!existingDonor;
+        }
+        
+        // Add amount if not already added
+        if (!amountAlreadyAdded) {
+            const newDonated = Math.round((currentDonated + donationAmount) * 100) / 100;
+            const donors = itemData.donors || {};
+            const donorKey = `donor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            donors[donorKey] = {
+                name: donation.donorName,
+                amount: donationAmount,
+                donationId: donationId,
+                createdAt: donation.createdAt || firebase.database.ServerValue.TIMESTAMP
+            };
+            
+            const isFunded = newDonated >= (itemData.total || 0);
+            
+            await itemRef.update({
+                donated: newDonated,
+                donors: donors,
+                status: isFunded ? 'funded' : 'available',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            if (isFunded) {
+                await createNotification('item_funded', `Item fully funded: ${itemData.name}`, donation.itemId);
+            }
+        } else {
+            console.log('✅ Amount already added - skipping duplicate addition');
+        }
+
+        // Update donation status to verified
+        await database.ref(`donations/${donationId}`).update({
+            status: 'verified',
+            verifiedAt: firebase.database.ServerValue.TIMESTAMP,
+            verifiedBy: user ? user.email : 'Admin'
+        });
+
+        // Log activity
+        await logActivity('donation_verified', `Verified donation: ₹${formatCurrency(donation.amount)} for ${itemData.name}`);
+
+        alert('Donation verified successfully! Amount has been added to the item.');
+    } catch (error) {
+        console.error('Error verifying donation:', error);
+        alert('Failed to verify donation');
+    }
+}
+
+async function rejectDonation(donationId) {
+    if (!confirm('Reject this donation? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const donationSnapshot = await database.ref(`donations/${donationId}`).once('value');
+        const donation = donationSnapshot.val();
+        
+        if (!donation) {
+            alert('Donation not found');
+            return;
+        }
+
+        // Get item and remove donation amount and donor
+        const itemRef = database.ref(`items/${donation.itemId}`);
+        const itemSnapshot = await itemRef.once('value');
+        const item = itemSnapshot.val();
+        
+        if (item) {
+            const donationAmount = Math.round((donation.amount || 0) * 100) / 100;
+            const currentDonated = Math.round((item.donated || 0) * 100) / 100;
+            
+            // Remove donation amount from item (donations are added immediately when submitted)
+            const newDonated = Math.max(0, Math.round((currentDonated - donationAmount) * 100) / 100);
+            
+            // Remove donor from item's donors list
+            // Match by donationId first, then by name and amount as fallback
+            let updatedDonors = {};
+            let donorRemovedByDonationId = false;
+            
+            if (item.donors) {
+                // First pass: Remove donors that match by donationId
+                Object.keys(item.donors).forEach(key => {
+                    const donor = item.donors[key];
+                    if (donor.donationId && donor.donationId === donationId) {
+                        donorRemovedByDonationId = true;
+                        console.log('✅ Removed donor by donationId:', donationId, 'Donor name:', donor.name);
+                    } else {
+                        updatedDonors[key] = donor;
+                    }
+                });
+                
+                // If no match by donationId, try matching by name and amount
+                if (!donorRemovedByDonationId && donation.donorName && donationAmount) {
+                    updatedDonors = {};
+                    let foundMatch = false;
+                    
+                    Object.keys(item.donors).forEach(key => {
+                        const donor = item.donors[key];
+                        const donorAmount = Math.round((donor.amount || 0) * 100) / 100;
+                        
+                        // Check if this donor matches by name and amount
+                        if (donor.name === donation.donorName && donorAmount === donationAmount) {
+                            // Count how many donors match this name/amount
+                            const matchingCount = Object.values(item.donors).filter(d => 
+                                d.name === donation.donorName && 
+                                Math.round((d.amount || 0) * 100) / 100 === donationAmount
+                            ).length;
+                            
+                            // If only one match, remove it
+                            if (matchingCount === 1 && !foundMatch) {
+                                foundMatch = true;
+                                console.log('✅ Removed donor by name and amount match:', donor.name);
+                                // Don't add this donor to updatedDonors
+                            } else {
+                                updatedDonors[key] = donor;
+                            }
+                        } else {
+                            updatedDonors[key] = donor;
+                        }
+                    });
+                }
+            }
+            
+            const donorsBeforeCount = item.donors ? Object.keys(item.donors).length : 0;
+            const donorsAfterCount = Object.keys(updatedDonors).length;
+            const donorWasRemoved = donorsBeforeCount > donorsAfterCount;
+            
+            console.log('📊 Donor removal:', {
+                donationId: donationId,
+                donorName: donation.donorName,
+                donationAmount: donationAmount,
+                donorsBefore: donorsBeforeCount,
+                donorsAfter: donorsAfterCount,
+                donorRemoved: donorWasRemoved,
+                removedByDonationId: donorRemovedByDonationId
+            });
+            
+            // Update item with new donated amount, donors list, and status
+            // This will trigger real-time listeners on:
+            // 1. Admin panel "All Items" view (itemsRef.on('value'))
+            // 2. Main website items display (itemsRef.on('value'))
+            await itemRef.update({
+                donated: newDonated,
+                donors: updatedDonors,
+                status: newDonated >= (item.total || 0) ? 'funded' : 'available',
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+            
+            console.log('✅ Item updated after rejection - real-time listeners will update UI automatically');
+        }
+
+        // Delete donation - this will trigger real-time listener on "All Donations" view
+        await database.ref(`donations/${donationId}`).remove();
+        console.log('✅ Donation deleted - real-time listener will update "All Donations" view automatically');
+        
+        await logActivity('donation_rejected', `Rejected donation: ₹${formatCurrency(donation.amount)} for ${item ? item.name : 'item'}`);
+
+        alert('Donation rejected and removed. Donor has been removed from the item.\n\nAll views will update automatically via real-time listeners.');
+    } catch (error) {
+        console.error('Error rejecting donation:', error);
+        alert('Failed to reject donation');
+    }
+}
+
+async function updateStatistics() {
+    try {
+        const itemsSnapshot = await database.ref('items').once('value');
+        const itemsData = itemsSnapshot.val() || {};
+        const items = Object.values(itemsData);
+        
+        const donationsSnapshot = await database.ref('donations').once('value');
+        const donationsData = donationsSnapshot.val() || {};
+        const donations = Object.values(donationsData);
+        
+        const totalItems = items.length;
+        const fundedItems = items.filter(item => (item.donated || 0) >= (item.total || 0)).length;
+        const totalDonations = donations.length;
+        const totalAmount = donations.reduce((sum, d) => sum + (d.amount || 0), 0);
+        
+        document.getElementById('stat-total-items').textContent = totalItems;
+        document.getElementById('stat-funded').textContent = fundedItems;
+        document.getElementById('stat-total-donations').textContent = totalDonations;
+        document.getElementById('stat-total-amount').textContent = `₹${formatCurrency(totalAmount)}`;
+    } catch (error) {
+        console.error('Error updating statistics:', error);
+    }
+}
+
+// Settings Management
+async function loadSettings() {
+    try {
+        const settings = await getSettings();
+        if (settings) {
+            document.getElementById('setting-project-name').value = settings.projectName || '';
+            document.getElementById('setting-upi-qr').value = settings.upiQrCode || '';
+            document.getElementById('setting-certificate-text').value = settings.certificateText || '';
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+async function handleSaveSettings(e) {
+    e.preventDefault();
+    
+    const settings = {
+        projectName: document.getElementById('setting-project-name').value.trim(),
+        upiQrCode: document.getElementById('setting-upi-qr').value.trim(),
+        certificateText: document.getElementById('setting-certificate-text').value.trim()
+    };
+
+    const success = await saveSettings(settings);
+    if (success) {
+        alert('Settings saved successfully!');
+    } else {
+        alert('Failed to save settings. Please try again.');
+    }
+}
+
+// Activity Log
+async function loadActivityLog() {
+    try {
+        const activityRef = database.ref('activity');
+        activityRef.on('value', (snapshot) => {
+            const activities = snapshot.val() || {};
+            const activityList = Object.keys(activities).map(key => ({
+                id: key,
+                ...activities[key]
+            })).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            const container = document.getElementById('activity-list');
+            if (activityList.length === 0) {
+                container.innerHTML = '<p class="text-gray-600">No activity yet.</p>';
+                return;
+            }
+
+            container.innerHTML = activityList.slice(0, 50).map(activity => `
+                <div class="border-l-4 border-red-500 pl-4 py-2 bg-gray-50 rounded">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-medium text-gray-900">${escapeHtml(activity.details)}</div>
+                            <div class="text-sm text-gray-600 mt-1">
+                                Type: <span class="font-medium">${escapeHtml(activity.type)}</span> | 
+                                User: <span class="font-medium">${escapeHtml(activity.user || 'system')}</span>
+                            </div>
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            ${formatDate(activity.timestamp)}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        });
+    } catch (error) {
+        console.error('Error loading activity log:', error);
+    }
+}
+
+// Analytics
+async function loadAnalytics() {
+    try {
+        const analyticsRef = database.ref('analytics');
+        analyticsRef.on('value', (snapshot) => {
+            const analytics = snapshot.val() || {};
+            
+            document.getElementById('analytics-page-views').textContent = analytics.pageViews || 0;
+            document.getElementById('analytics-conversion').textContent = 
+                analytics.conversionRate ? `${analytics.conversionRate}%` : '0%';
+
+            // Get popular items
+            database.ref('items').once('value').then(itemsSnapshot => {
+                const items = itemsSnapshot.val() || {};
+                const itemsList = Object.values(items).sort((a, b) => 
+                    (b.donated || 0) - (a.donated || 0)
+                ).slice(0, 5);
+
+                const container = document.getElementById('analytics-popular-items');
+                if (itemsList.length === 0) {
+                    container.innerHTML = '<p class="text-gray-600">No items yet.</p>';
+                    return;
+                }
+
+                container.innerHTML = itemsList.map((item, index) => `
+                    <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                        <div>
+                            <span class="font-bold text-red-600">#${index + 1}</span>
+                            <span class="ml-2">${escapeHtml(item.name)}</span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            ₹${formatCurrency(item.donated || 0)} / ₹${formatCurrency(item.total || 0)}
+                        </div>
+                    </div>
+                `).join('');
+            });
+        });
+    } catch (error) {
+        console.error('Error loading analytics:', error);
+    }
+}
+
+// Notifications
+async function loadNotifications() {
+    try {
+        const notificationsRef = database.ref('notifications');
+        notificationsRef.on('value', (snapshot) => {
+            const notifications = snapshot.val() || {};
+            const notificationList = Object.keys(notifications).map(key => ({
+                id: key,
+                ...notifications[key]
+            })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            const container = document.getElementById('notifications-list');
+            if (notificationList.length === 0) {
+                container.innerHTML = '<p class="text-gray-600">No notifications yet.</p>';
+                return;
+            }
+
+            container.innerHTML = notificationList.slice(0, 20).map(notification => `
+                <div class="border-2 ${notification.read ? 'border-gray-200' : 'border-red-300'} rounded-lg p-4 ${notification.read ? 'bg-gray-50' : 'bg-white'}">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="font-medium text-gray-900">${escapeHtml(notification.message)}</div>
+                            <div class="text-sm text-gray-600 mt-1">
+                                ${formatDate(notification.createdAt)}
+                            </div>
+                        </div>
+                        ${!notification.read ? `
+                            <button onclick="markNotificationReadHandler('${notification.id}')" 
+                                    class="ml-4 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 transition">
+                                Mark Read
+                            </button>
+                        ` : '<span class="text-xs text-gray-500 ml-4">✓ Read</span>'}
+                    </div>
+                </div>
+            `).join('');
+        });
+    } catch (error) {
+        console.error('Error loading notifications:', error);
+    }
+}
+
+async function markNotificationReadHandler(notificationId) {
+    await markNotificationRead(notificationId);
+    await updateNotificationsBadge();
+    loadNotifications(); // Reload to update UI
+}
+
+async function updateNotificationsBadge() {
+    try {
+        const count = await getUnreadNotificationsCount();
+        const badge = document.getElementById('notification-badge');
+        if (count > 0) {
+            badge.textContent = count;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error updating notifications badge:', error);
+    }
+}
+
+// Utility functions
+function formatCurrency(amount) {
+    return amount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatDate(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}

@@ -1,0 +1,13 @@
+# Firebase config (optional - you may want to keep it in repo)
+# firebase-config.js
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
