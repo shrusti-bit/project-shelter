@@ -221,7 +221,7 @@ function createItemCard(item) {
     const isFunded = verifiedDonated >= total; // Use verified amount for funding check
     const hasPendingDonations = item.hasPendingDonations || false;
     const remaining = Math.max(0, total - donated); // Remaining based on total donated (to match Collected display)
-    const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0; // Progress based on total donated (to match Collected display)
+    const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0; // Progress based on total donated (to match Collected display - updates immediately)
     
     // Determine status: 
     // - "Funded" only if fully funded with verified donations AND no pending donations
@@ -363,7 +363,8 @@ function openDonationModal(item) {
 
     // Use total donated amount for remaining calculation (to match main page display)
     const donated = item.donated || 0;
-    const remaining = Math.max(0, item.total - donated);
+    const total = item.total || 0;
+    const remaining = Math.max(0, total - donated);
 
     itemNameEl.textContent = `Donate to ${item.name}`;
     amountInput.max = remaining;
@@ -464,7 +465,8 @@ async function handleConfirmDonation(e) {
 
     // Use total donated amount for remaining calculation (to match main page display)
     const donated = currentItem.donated || 0;
-    const remaining = currentItem.total - donated;
+    const total = currentItem.total || 0;
+    const remaining = Math.max(0, total - donated);
     if (amount > remaining) {
         showFormError(`Amount cannot exceed remaining amount of ₹${formatCurrency(remaining)}`);
         return;
@@ -614,13 +616,21 @@ async function handleSubmitDonation(e) {
         const currentDonated = Math.round((itemData.donated || 0) * 100) / 100;
         
         // Check if donor already exists in the item's donors list
+        // First check by donationId (from handleConfirmDonation), then by name+amount (for backward compatibility)
         const existingDonors = itemData.donors || {};
         let donorExists = false;
-        for (const key in existingDonors) {
-            const donor = existingDonors[key];
-            if (donor.name === donorName && Math.round(donor.amount * 100) / 100 === amount) {
-                donorExists = true;
-                break;
+        // Check by donationId first (most reliable - prevents double counting)
+        const existingDonorById = Object.values(existingDonors).find(d => d.donationId === donationId);
+        if (existingDonorById) {
+            donorExists = true;
+        } else {
+            // Fallback: check by name and amount (for old donations without donationId)
+            for (const key in existingDonors) {
+                const donor = existingDonors[key];
+                if (donor.name === donorName && Math.round(donor.amount * 100) / 100 === amount) {
+                    donorExists = true;
+                    break;
+                }
             }
         }
         
