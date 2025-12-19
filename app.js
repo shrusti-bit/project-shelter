@@ -221,7 +221,7 @@ function createItemCard(item) {
     const isFunded = verifiedDonated >= total; // Use verified amount for funding check
     const hasPendingDonations = item.hasPendingDonations || false;
     const remaining = Math.max(0, total - donated); // Remaining based on total donated (to match Collected display)
-    const progressPercent = total > 0 ? Math.min(100, (verifiedDonated / total) * 100) : 0; // Progress based on verified amount
+    const progressPercent = total > 0 ? Math.min(100, (donated / total) * 100) : 0; // Progress based on total donated (to match Collected display)
     
     // Determine status: 
     // - "Funded" only if fully funded with verified donations AND no pending donations
