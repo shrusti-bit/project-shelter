@@ -332,6 +332,35 @@
         </div>
     </div>
 
+    <!-- Thank You Modal -->
+    <div id="thank-you-modal" class="modal hidden" style="z-index: 10000;">
+        <div class="modal-content christmas-card p-6 relative" style="max-width: 500px; width: 100%;" onclick="event.stopPropagation()">
+            <button onclick="closeThankYouModal()" class="absolute top-4 right-4 text-gray-400 hover:text-red-600 text-3xl font-bold transition">×</button>
+            
+            <!-- Thank You Message -->
+            <div class="text-center py-8">
+                <div class="text-6xl mb-6">🎉</div>
+                <p class="text-3xl font-bold text-red-600 mb-4" style="font-weight: bold;">
+                    <strong>THANK YOU FOR MAKING THIS DONATION!</strong>
+                </p>
+                <p class="text-xl font-bold text-gray-700 mt-4" style="font-weight: bold;">
+                    <strong>All donations are now complete. We truly appreciate your generosity! 🎁✨</strong>
+                </p>
+            </div>
+
+            <!-- Close Button -->
+            <div class="text-center mt-6">
+                <button
+                    type="button"
+                    onclick="closeThankYouModal()"
+                    class="btn-christmas px-8 py-3 rounded-lg font-bold text-lg hover:scale-105 transition-transform"
+                >
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="firebase-config.js"></script>
     <script src="utils.js"></script>
     <script src="app.js"></script>

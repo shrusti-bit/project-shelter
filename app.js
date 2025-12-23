@@ -6,6 +6,10 @@ let itemsRef = null;
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
+    // Show thank you message automatically when page loads
+    setTimeout(() => {
+        showThankYouModal();
+    }, 500);
 });
 
 function initializeApp() {
@@ -203,14 +207,6 @@ function renderItems(items) {
 
     // Render only filtered items
     itemsGridEl.innerHTML = filteredItems.map(item => createItemCard(item)).join('');
-
-    // Add event listeners to donate buttons (only buttons that are rendered can accept donations)
-    filteredItems.forEach(item => {
-        const btn = document.getElementById(`donate-btn-${item.id}`);
-        if (btn) {
-            btn.addEventListener('click', () => openDonationModal(item));
-        }
-    });
 }
 
 // Create item card HTML
@@ -287,9 +283,9 @@ function createItemCard(item) {
 
 
             ${canDonate ? `
-                <button id="donate-btn-${item.id}" class="w-full btn-christmas py-3 px-4 rounded-lg font-bold text-lg mt-auto">
-                    🎁 Donate Now
-                </button>
+                <div class="w-full bg-green-50 border-2 border-green-300 rounded-lg p-3 mt-auto text-center">
+                    <p class="text-sm text-green-800 font-medium">✅ Thank you for your support!</p>
+                </div>
             ` : isFullyFundedWithPending && verifiedDonated < total ? `
                 <div class="w-full bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mt-auto text-center">
                     <p class="text-sm text-yellow-800 font-medium">⏳ Pending admin verification</p>
@@ -352,48 +348,10 @@ function getDonorDisplay(item) {
     return displayText;
 }
 
-// Open donation modal
+// Open donation modal - now just shows thank you message
 function openDonationModal(item) {
-    currentItem = item;
-    const modal = document.getElementById('donation-modal');
-    const itemNameEl = document.getElementById('modal-item-name');
-    const amountInput = document.getElementById('donation-amount');
-    const amountHint = document.getElementById('amount-hint');
-    const formError = document.getElementById('form-error');
-
-    // Use total donated amount for remaining calculation (to match main page display)
-    const donated = item.donated || 0;
-    const total = item.total || 0;
-    const remaining = Math.max(0, total - donated);
-
-    itemNameEl.textContent = `Donate to ${item.name}`;
-    amountInput.max = remaining;
-    amountHint.textContent = `Max: ₹${formatCurrency(remaining)}`;
-    formError.classList.add('hidden');
-    
-    // Update summary card
-    const summaryItemName = document.getElementById('summary-item-name');
-    const summaryRemaining = document.getElementById('summary-remaining');
-    if (summaryItemName) summaryItemName.textContent = item.name;
-    if (summaryRemaining) summaryRemaining.textContent = `₹${formatCurrency(remaining)}`;
-
-    // Reset form
-    document.getElementById('donation-form').reset();
-    amountInput.value = '';
-    
-    // Re-enable confirm button (in case it was disabled from previous attempt)
-    const confirmBtn = document.getElementById('confirm-donation');
-    if (confirmBtn) {
-        confirmBtn.disabled = false;
-    }
-
-    modal.classList.remove('hidden');
-    
-    // Scroll to top of modal
-    const modalContent = modal.querySelector('.modal-content');
-    if (modalContent) {
-        modalContent.scrollTop = 0;
-    }
+    // Donations are closed - show thank you message directly
+    showThankYouModal();
 }
 
 // Close donation modal
@@ -417,150 +375,17 @@ function closeDonationModal() {
     console.log('✅ Donation modal closed');
 }
 
-// Handle Confirm button - Save to admin and update amounts
+// Handle Confirm button - Show thank you message (donations are closed)
 async function handleConfirmDonation(e) {
     e.preventDefault();
     
-    const formError = document.getElementById('form-error');
-    const confirmBtn = document.getElementById('confirm-donation');
-    formError.classList.add('hidden');
-
-    if (!currentItem) {
-        showFormError('No item selected');
-        return;
-    }
-
-    const donorName = document.getElementById('donor-name').value.trim();
-    const donorEmail = document.getElementById('donor-email').value.trim();
-    const donorPhone = document.getElementById('donor-phone').value.trim();
-    const amount = Math.round(parseFloat(document.getElementById('donation-amount').value) * 100) / 100;
-
-    // Validation
-    if (!donorName || donorName.length < 2) {
-        showFormError('Name must be at least 2 characters');
-        return;
-    }
-
-    if (!donorEmail || !isValidEmail(donorEmail)) {
-        showFormError('Please enter a valid email address');
-        return;
-    }
-
-    if (!donorPhone || donorPhone.length < 10) {
-        showFormError('Please enter a valid phone number (minimum 10 digits)');
-        return;
-    }
+    // Close donation form modal immediately
+    closeDonationModal();
     
-    // Validate phone number format (allows +, spaces, hyphens, parentheses, and digits)
-    const phoneRegex = /^[\d\s\+\-\(\)]+$/;
-    if (!phoneRegex.test(donorPhone)) {
-        showFormError('Please enter a valid phone number');
-        return;
-    }
-
-    if (!amount || amount < 1) {
-        showFormError('Amount must be at least ₹1');
-        return;
-    }
-
-    // Use total donated amount for remaining calculation (to match main page display)
-    const donated = currentItem.donated || 0;
-    const total = currentItem.total || 0;
-    const remaining = Math.max(0, total - donated);
-    if (amount > remaining) {
-        showFormError(`Amount cannot exceed remaining amount of ₹${formatCurrency(remaining)}`);
-        return;
-    }
-
-    // Disable button
-    confirmBtn.disabled = true;
-
-    try {
-        // Check Firebase connection
-        if (!database) {
-            throw new Error('Firebase connection error. Please check firebase-config.js');
-        }
-
-        // Save donation to admin
-        const donationId = database.ref('donations').push().key;
-        const donation = {
-            itemId: currentItem.id,
-            donorName,
-            donorEmail,
-            donorPhone,
-            amount,
-            status: 'pending',
-            submittedAt: new Date().toISOString(),
-            verified: false
-        };
-
-        console.log('💾 Saving donation to admin...');
-        await database.ref(`donations/${donationId}`).set(donation);
-        console.log('✅ Donation saved to admin:', donationId);
-
-        // Update item: add amount and donor immediately (reflects on main page)
-        const currentDonated = Math.round((currentItem.donated || 0) * 100) / 100;
-        const newDonated = Math.round((currentDonated + amount) * 100) / 100;
-        
-        // Get or initialize donors object
-        const donors = currentItem.donors || {};
-        const donorKey = database.ref('donors').push().key;
-        donors[donorKey] = {
-            name: donorName,
-            amount: amount,
-            donationId: donationId,
-            createdAt: new Date().toISOString()
-        };
-        
-        // Update item with new donated amount and donor
-        const itemUpdate = {
-            donated: newDonated,
-            donors: donors
-        };
-        
-        console.log('💾 Updating item amounts (Collected/Remaining)...');
-        await database.ref(`items/${currentItem.id}`).update(itemUpdate);
-        console.log('✅ Item amounts updated - will reflect on main page');
-        console.log('💰 Collected:', newDonated);
-
-        // Store donation ID for reference
-        window.pendingDonation = {
-            donationId,
-            donorName,
-            donorEmail,
-            donorPhone,
-            amount,
-            itemId: currentItem.id
-        };
-
-        // Create notification for admin
-        try {
-            if (typeof createNotification === 'function') {
-                const itemName = currentItem.name || 'Unknown Item';
-                await createNotification('new_donation', 
-                    `New donation: ₹${amount.toLocaleString('en-IN')} for ${itemName}`, 
-                    currentItem.id);
-            }
-        } catch (err) {
-            console.warn('Notification creation failed:', err);
-        }
-
-        // Re-enable button before closing modal
-        confirmBtn.disabled = false;
-        
-        // Close donation form modal
-        closeDonationModal();
-        
-        // Show payment instructions modal
-        setTimeout(() => {
-            showPaymentInstructionsModal();
-        }, 200);
-
-    } catch (error) {
-        console.error('❌ Error saving donation:', error);
-        showFormError(error.message || 'Failed to save donation. Please try again.');
-        confirmBtn.disabled = false;
-    }
+    // Show thank you modal
+    setTimeout(() => {
+        showThankYouModal();
+    }, 200);
 }
 
 // Handle Submit Donation button (from payment instructions modal) - Save to admin and update amounts again
@@ -814,6 +639,47 @@ function closePaymentInstructionsModal() {
 
 // Make function globally accessible for onclick handlers
 window.closePaymentInstructionsModal = closePaymentInstructionsModal;
+
+// Show thank you modal
+function showThankYouModal() {
+    console.log('🔄 Showing thank you modal...');
+    const modal = document.getElementById('thank-you-modal');
+    if (!modal) {
+        console.error('❌ Thank you modal not found in DOM');
+        alert('🎉 Thank you so much for your generous donation! Your support means the world to us! 🎁✨');
+        return;
+    }
+    
+    console.log('✅ Modal found, removing hidden class...');
+    // Show modal
+    modal.classList.remove('hidden');
+    console.log('✅ Thank you modal should now be visible');
+    
+    // Allow clicking outside to close
+    const oldHandler = modal._closeHandler;
+    if (oldHandler) {
+        modal.removeEventListener('click', oldHandler);
+    }
+    
+    const closeOnClick = function(e) {
+        if (e.target === modal) {
+            closeThankYouModal();
+        }
+    };
+    modal._closeHandler = closeOnClick;
+    modal.addEventListener('click', closeOnClick);
+}
+
+function closeThankYouModal() {
+    const modal = document.getElementById('thank-you-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        console.log('✅ Thank you modal closed');
+    }
+}
+
+// Make function globally accessible for onclick handlers
+window.closeThankYouModal = closeThankYouModal;
 
 // Utility functions
 function formatCurrency(amount) {
